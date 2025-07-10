@@ -69,16 +69,16 @@ def optimize_image(image_path, max_size=MAX_IMAGE_SIZE):
         return False
 
 def create_vector_svg_from_image(image_path, svg_path):
-    """Tworzy SVG z rzeczywistą analizą obrazu i detekcją krawędzi"""
+    """Tworzy SVG z wysoką dokładnością odwzorowania szczegółów obrazu"""
     try:
         with Image.open(image_path) as img:
             # Konwertuj do RGB jeśli potrzebne
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            # Zmniejsz rozmiar dla analizy, ale zachowaj proporcje
+            # Zwiększ rozmiar analizy dla lepszych szczegółów
             original_size = img.size
-            max_analysis_size = 150
+            max_analysis_size = 300  # Zwiększony rozmiar
             if max(original_size) > max_analysis_size:
                 ratio = max_analysis_size / max(original_size)
                 new_size = (int(original_size[0] * ratio), int(original_size[1] * ratio))
@@ -88,52 +88,56 @@ def create_vector_svg_from_image(image_path, svg_path):
             
             width, height = img_analysis.size
             
-            # Zwiększ kontrast i ostrość
-            from PIL import ImageEnhance
+            # Ulepszenie kontrastu i ostrości
+            from PIL import ImageEnhance, ImageFilter
             enhancer = ImageEnhance.Contrast(img_analysis)
-            img_analysis = enhancer.enhance(1.5)
+            img_analysis = enhancer.enhance(1.8)  # Zwiększony kontrast
             
             enhancer = ImageEnhance.Sharpness(img_analysis)
-            img_analysis = enhancer.enhance(1.3)
+            img_analysis = enhancer.enhance(2.0)  # Zwiększona ostrość
             
-            # Konwertuj do tablicy numpy-podobnej struktury
+            # Zastosuj filtry dla lepszej detekcji krawędzi
+            img_analysis = img_analysis.filter(ImageFilter.EDGE_ENHANCE_MORE)
+            
+            # Konwertuj do tablicy pikseli
             pixels = list(img_analysis.getdata())
             
             # Funkcja do obliczania odległości kolorów
             def color_distance(c1, c2):
                 return sum((a - b) ** 2 for a, b in zip(c1[:3], c2[:3])) ** 0.5
             
-            # Znajdź dominujące kolory z lepszą klasteryzacją
+            # Precyzyjna kwantyzacja kolorów - więcej kolorów, mniejsze grupy
             color_frequency = {}
             for pixel in pixels:
                 if isinstance(pixel, int):
                     pixel = (pixel, pixel, pixel)
                 
-                # Zmniejsz precyzję kolorów (kwantyzacja)
-                quantized = tuple(int(c // 32) * 32 for c in pixel[:3])
+                # Zmniejszona kwantyzacja dla lepszych szczegółów
+                quantized = tuple(int(c // 16) * 16 for c in pixel[:3])  # 16 zamiast 32
                 color_frequency[quantized] = color_frequency.get(quantized, 0) + 1
             
-            # Wybierz najczęstsze kolory (maksymalnie 8)
-            sorted_colors = sorted(color_frequency.items(), key=lambda x: x[1], reverse=True)[:8]
+            # Wybierz więcej kolorów (maksymalnie 16)
+            sorted_colors = sorted(color_frequency.items(), key=lambda x: x[1], reverse=True)[:16]
             
-            # Usuń kolory tła (bardzo jasne lub bardzo ciemne)
+            # Bardziej precyzyjna filtracja kolorów
             filtered_colors = []
             for color, freq in sorted_colors:
                 brightness = sum(color) / 3
-                if 30 < brightness < 225 and freq > len(pixels) * 0.005:  # Minimum 0.5% pikseli
+                # Mniej restrykcyjne filtrowanie
+                if freq > len(pixels) * 0.002:  # Minimum 0.2% pikseli
                     filtered_colors.append((color, freq))
             
             if not filtered_colors:
-                filtered_colors = sorted_colors[:3]  # Fallback
+                filtered_colors = sorted_colors[:5]  # Fallback
             
-            # SVG wymiary
-            svg_width = 400
-            svg_height = int(400 * height / width) if width > 0 else 300
+            # SVG wymiary - wyższa rozdzielczość
+            svg_width = 600  # Zwiększone z 400
+            svg_height = int(600 * height / width) if width > 0 else 450
             
             svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
      width="{svg_width}" height="{svg_height}" viewBox="0 0 {svg_width} {svg_height}">
-  <title>Embroidery Pattern</title>
+  <title>High-Detail Embroidery Pattern</title>
   <g id="embroidery-paths">'''
             
             # Skalowanie
@@ -142,13 +146,13 @@ def create_vector_svg_from_image(image_path, svg_path):
             
             path_count = 0
             
-            # Twórz ścieżki dla każdego dominującego koloru
+            # Szczegółowa mapa pikseli dla każdego koloru
             for color_group, frequency in filtered_colors:
                 rgb = f"rgb({color_group[0]},{color_group[1]},{color_group[2]})"
                 
-                # Znajdź wszystkie piksele podobne do tego koloru
+                # Znajdź wszystkie piksele podobne do tego koloru z mniejszą tolerancją
                 color_pixels = []
-                tolerance = 45
+                tolerance = 25  # Zmniejszona tolerancja dla lepszych szczegółów
                 
                 for y in range(height):
                     for x in range(width):
@@ -161,10 +165,9 @@ def create_vector_svg_from_image(image_path, svg_path):
                             if color_distance(pixel, color_group) < tolerance:
                                 color_pixels.append((x, y))
                 
-                # Grupuj piksele w regiony
-                if color_pixels and len(color_pixels) > 5:
-                    # Prosta segmentacja - grupuj sąsiadujące piksele
-                    regions = []
+                # Twórz szczegółowe kształty zamiast prostych prostokątów
+                if color_pixels and len(color_pixels) > 2:
+                    # Grupuj piksele w bardziej precyzyjne regiony
                     processed = set()
                     
                     for px, py in color_pixels:
@@ -175,7 +178,9 @@ def create_vector_svg_from_image(image_path, svg_path):
                         region = []
                         to_process = [(px, py)]
                         
-                        while to_process:
+                        while to_process and len(region) < 100:  # Limit rozmiaru regionu
+                            if not to_process:
+                                break
                             x, y = to_process.pop(0)
                             if (x, y) in processed:
                                 continue
@@ -183,43 +188,66 @@ def create_vector_svg_from_image(image_path, svg_path):
                             processed.add((x, y))
                             region.append((x, y))
                             
-                            # Sprawdź sąsiadów
-                            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, 1), (-1, 1), (1, -1)]:
+                            # Sprawdź tylko bezpośrednich sąsiadów dla precyzji
+                            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                                 nx, ny = x + dx, y + dy
-                                if (nx, ny) in color_pixels and (nx, ny) not in processed:
+                                if (nx, ny) in color_pixels and (nx, ny) not in processed and len(to_process) < 50:
                                     to_process.append((nx, ny))
                         
-                        if len(region) > 3:  # Minimum 3 piksele dla regionu
-                            regions.append(region)
-                    
-                    # Twórz prostokąty dla każdego regionu
-                    for region in regions:
-                        if len(region) < 3:
-                            continue
-                        
-                        min_x = min(p[0] for p in region)
-                        max_x = max(p[0] for p in region)
-                        min_y = min(p[1] for p in region)
-                        max_y = max(p[1] for p in region)
-                        
-                        # Dodaj margines
-                        rect_x = min_x * scale_x
-                        rect_y = min_y * scale_y
-                        rect_w = (max_x - min_x + 1) * scale_x
-                        rect_h = (max_y - min_y + 1) * scale_y
-                        
-                        # Dodaj prostokąt jako ścieżkę
-                        if rect_w >= 1 and rect_h >= 1:
-                            path_data = f"M {rect_x:.1f},{rect_y:.1f} L {rect_x + rect_w:.1f},{rect_y:.1f} L {rect_x + rect_w:.1f},{rect_y + rect_h:.1f} L {rect_x:.1f},{rect_y + rect_h:.1f} Z"
-                            
-                            svg_content += f'''
-    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.3"/>'''
-                            path_count += 1
+                        if len(region) >= 1:  # Każdy piksel może być osobnym kształtem
+                            # Twórz precyzyjne małe kształty
+                            if len(region) == 1:
+                                # Pojedynczy piksel jako mały prostokąt
+                                x, y = region[0]
+                                rect_x = x * scale_x
+                                rect_y = y * scale_y
+                                rect_w = scale_x * 0.8
+                                rect_h = scale_y * 0.8
+                                
+                                path_data = f"M {rect_x:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y + rect_h:.2f} L {rect_x:.2f},{rect_y + rect_h:.2f} Z"
+                                
+                                svg_content += f'''
+    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.1"/>'''
+                                path_count += 1
+                            else:
+                                # Większy region - twórz kontur
+                                min_x = min(p[0] for p in region)
+                                max_x = max(p[0] for p in region)
+                                min_y = min(p[1] for p in region)
+                                max_y = max(p[1] for p in region)
+                                
+                                # Sortuj punkty regionu dla lepszego konturu
+                                region_points = sorted(region)
+                                
+                                # Twórz ścieżkę konturową
+                                if len(region_points) > 3:
+                                    path_data = f"M {min_x * scale_x:.2f},{min_y * scale_y:.2f}"
+                                    
+                                    # Dodaj punkty konturu
+                                    for i, (x, y) in enumerate(region_points[::max(1, len(region_points)//8)]):
+                                        path_data += f" L {x * scale_x:.2f},{y * scale_y:.2f}"
+                                    
+                                    path_data += " Z"
+                                    
+                                    svg_content += f'''
+    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.2"/>'''
+                                    path_count += 1
+                                else:
+                                    # Mały region jako prostokąt
+                                    rect_x = min_x * scale_x
+                                    rect_y = min_y * scale_y
+                                    rect_w = (max_x - min_x + 1) * scale_x
+                                    rect_h = (max_y - min_y + 1) * scale_y
+                                    
+                                    path_data = f"M {rect_x:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y + rect_h:.2f} L {rect_x:.2f},{rect_y + rect_h:.2f} Z"
+                                    
+                                    svg_content += f'''
+    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.2"/>'''
+                                    path_count += 1
             
-            # Jeśli nie utworzono żadnych ścieżek, stwórz podstawową reprezentację
-            if path_count == 0:
-                # Utwórz prostą siatkę na podstawie obrazu
-                grid_size = 10
+            # Jeśli nie utworzono wystarczająco ścieżek, dodaj szczegółową siatkę
+            if path_count < 50:
+                grid_size = 3  # Bardzo mała siatka dla szczegółów
                 for y in range(0, height, grid_size):
                     for x in range(0, width, grid_size):
                         pixel_idx = y * width + x
@@ -228,19 +256,19 @@ def create_vector_svg_from_image(image_path, svg_path):
                             if isinstance(pixel, int):
                                 pixel = (pixel, pixel, pixel)
                             
-                            # Dodaj tylko ciemniejsze piksele
+                            # Dodaj wszystkie piksele z wystarczającą intensywnością
                             brightness = sum(pixel) / 3
-                            if brightness < 200:
+                            if brightness < 240:  # Mniej restrykcyjne
                                 rect_x = x * scale_x
                                 rect_y = y * scale_y
-                                rect_w = grid_size * scale_x
-                                rect_h = grid_size * scale_y
+                                rect_w = grid_size * scale_x * 0.9
+                                rect_h = grid_size * scale_y * 0.9
                                 
                                 rgb = f"rgb({pixel[0]},{pixel[1]},{pixel[2]})"
-                                path_data = f"M {rect_x:.1f},{rect_y:.1f} L {rect_x + rect_w:.1f},{rect_y:.1f} L {rect_x + rect_w:.1f},{rect_y + rect_h:.1f} L {rect_x:.1f},{rect_y + rect_h:.1f} Z"
+                                path_data = f"M {rect_x:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y + rect_h:.2f} L {rect_x:.2f},{rect_y + rect_h:.2f} Z"
                                 
                                 svg_content += f'''
-    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.5"/>'''
+    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.1"/>'''
                                 path_count += 1
             
             svg_content += '''
@@ -251,11 +279,11 @@ def create_vector_svg_from_image(image_path, svg_path):
             with open(svg_path, 'w', encoding='utf-8') as f:
                 f.write(svg_content)
                 
-            logger.info(f"Utworzono poprawioną wektoryzację SVG z {path_count} ścieżkami: {svg_path}")
+            logger.info(f"Utworzono szczegółową wektoryzację SVG z {path_count} ścieżkami: {svg_path}")
             return True
             
     except Exception as e:
-        logger.error(f"Błąd tworzenia wektorowego SVG: {e}")
+        logger.error(f"Błąd tworzenia szczegółowego SVG: {e}")
         return False
 
 def trace_with_simple_vectorization(image_path, svg_path):
