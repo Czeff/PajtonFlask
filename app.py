@@ -287,33 +287,7 @@ def create_vector_svg_from_image(image_path, svg_path):
     <path d="{path_data}" fill="none" stroke="{rgb}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'''
                     path_count += 1
 
-            # Jeśli nie znaleziono wystarczająco konturów, dodaj alternatywną metodę
-            if path_count < 20:
-                # Utwórz ścieżki na podstawie gradientu jasności
-                for y in range(0, height, 8):
-                    for x in range(0, width, 8):
-                        # Sprawdź czy to interesujący obszar
-                        if has_interesting_features(x, y, gray_pixels, width, height):
-                            # Twórz lokalną ścieżkę
-                            local_path = create_local_path(x, y, gray_pixels, width, height)
-                            if local_path:
-                                path_data = create_smooth_path(local_path, scale_x, scale_y)
-
-                                # Określ kolor
-                                pixel_idx = y * width + x
-                                original_pixels = list(img_analysis.getdata())
-                                if pixel_idx < len(original_pixels):
-                                    pixel = original_pixels[pixel_idx]
-                                    if isinstance(pixel, int):
-                                        pixel = (pixel, pixel, pixel)
-                                    rgb = f"rgb({pixel[0]},{pixel[1]},{pixel[2]})"
-                                else:
-                                    rgb = "rgb(100,100,100)"
-
-                                svg_content += f'''
-    <path d="{path_data}" fill="none" stroke="{rgb}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'''
-                                path_count += 1
-
+            # Funkcje pomocnicze
             def has_interesting_features(x, y, gray_data, w, h):
                 """Sprawdź czy obszar ma interesujące cechy"""
                 if x + 8 >= w or y + 8 >= h:
@@ -336,25 +310,6 @@ def create_vector_svg_from_image(image_path, svg_path):
                 variance = sum((v - mean_val) ** 2 for v in values) / len(values)
 
                 return variance > 500  # Próg dla interesujących obszarów
-
-            def create_local_path(x, y, gray_data, w, h):
-                """Twórz lokalną ścieżkę na podstawie gradientu"""
-                path_points = []
-
-                # Znajdź punkty o wysokim gradiencie w okolicy
-                for dy in range(-4, 5, 2):
-                    for dx in range(-4, 5, 2):
-                        px, py = x + dx, y + dy
-                        if 0 <= px < w and 0 <= py < h:
-                            if has_high_gradient(px, py, gray_data, w, h):
-                                path_points.append((px, py))
-
-                # Sortuj punkty by utworzyć ścieżkę
-                if len(path_points) > 2:
-                    path_points.sort(key=lambda p: (p[0], p[1]))
-                    return path_points
-
-                return None
 
             def has_high_gradient(x, y, gray_data, w, h):
                 """Sprawdź czy punkt ma wysoki gradient"""
@@ -381,6 +336,52 @@ def create_vector_svg_from_image(image_path, svg_path):
                             max_diff = max(max_diff, diff)
 
                 return max_diff > 30  # Próg dla wysokiego gradientu
+
+            def create_local_path(x, y, gray_data, w, h):
+                """Twórz lokalną ścieżkę na podstawie gradientu"""
+                path_points = []
+
+                # Znajdź punkty o wysokim gradiencie w okolicy
+                for dy in range(-4, 5, 2):
+                    for dx in range(-4, 5, 2):
+                        px, py = x + dx, y + dy
+                        if 0 <= px < w and 0 <= py < h:
+                            if has_high_gradient(px, py, gray_data, w, h):
+                                path_points.append((px, py))
+
+                # Sortuj punkty by utworzyć ścieżkę
+                if len(path_points) > 2:
+                    path_points.sort(key=lambda p: (p[0], p[1]))
+                    return path_points
+
+                return None
+
+            # Jeśli nie znaleziono wystarczająco konturów, dodaj alternatywną metodę
+            if path_count < 20:
+                # Utwórz ścieżki na podstawie gradientu jasności
+                for y in range(0, height, 8):
+                    for x in range(0, width, 8):
+                        # Sprawdź czy to interesujący obszar
+                        if has_interesting_features(x, y, gray_pixels, width, height):
+                            # Twórz lokalną ścieżkę
+                            local_path = create_local_path(x, y, gray_pixels, width, height)
+                            if local_path:
+                                path_data = create_smooth_path(local_path, scale_x, scale_y)
+
+                                # Określ kolor
+                                pixel_idx = y * width + x
+                                original_pixels = list(img_analysis.getdata())
+                                if pixel_idx < len(original_pixels):
+                                    pixel = original_pixels[pixel_idx]
+                                    if isinstance(pixel, int):
+                                        pixel = (pixel, pixel, pixel)
+                                    rgb = f"rgb({pixel[0]},{pixel[1]},{pixel[2]})"
+                                else:
+                                    rgb = "rgb(100,100,100)"
+
+                                svg_content += f'''
+    <path d="{path_data}" fill="none" stroke="{rgb}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'''
+                                path_count += 1
 
             svg_content += '''
   </g>
