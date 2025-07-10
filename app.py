@@ -69,7 +69,7 @@ def optimize_image(image_path, max_size=MAX_IMAGE_SIZE):
         return False
 
 def create_vector_svg_from_image(image_path, svg_path):
-    """Tworzy SVG z wysoką dokładnością odwzorowania szczegółów obrazu"""
+    """Tworzy SVG z prawdziwymi ścieżkami konturowymi zamiast brył"""
     try:
         with Image.open(image_path) as img:
             # Konwertuj do RGB jeśli potrzebne
@@ -78,7 +78,7 @@ def create_vector_svg_from_image(image_path, svg_path):
             
             # Zwiększ rozmiar analizy dla lepszych szczegółów
             original_size = img.size
-            max_analysis_size = 300  # Zwiększony rozmiar
+            max_analysis_size = 400  # Zwiększony rozmiar dla lepszych konturów
             if max(original_size) > max_analysis_size:
                 ratio = max_analysis_size / max(original_size)
                 new_size = (int(original_size[0] * ratio), int(original_size[1] * ratio))
@@ -88,56 +88,31 @@ def create_vector_svg_from_image(image_path, svg_path):
             
             width, height = img_analysis.size
             
-            # Ulepszenie kontrastu i ostrości
+            # Zastosuj filtry do detekcji krawędzi
             from PIL import ImageEnhance, ImageFilter
+            
+            # Zwiększ kontrast
             enhancer = ImageEnhance.Contrast(img_analysis)
-            img_analysis = enhancer.enhance(1.8)  # Zwiększony kontrast
+            img_analysis = enhancer.enhance(1.5)
             
-            enhancer = ImageEnhance.Sharpness(img_analysis)
-            img_analysis = enhancer.enhance(2.0)  # Zwiększona ostrość
+            # Zastosuj filtr do detekcji krawędzi
+            edges = img_analysis.filter(ImageFilter.FIND_EDGES)
             
-            # Zastosuj filtry dla lepszej detekcji krawędzi
-            img_analysis = img_analysis.filter(ImageFilter.EDGE_ENHANCE_MORE)
+            # Konwertuj do skali szarości dla lepszej detekcji krawędzi
+            gray = img_analysis.convert('L')
             
-            # Konwertuj do tablicy pikseli
-            pixels = list(img_analysis.getdata())
-            
-            # Funkcja do obliczania odległości kolorów
-            def color_distance(c1, c2):
-                return sum((a - b) ** 2 for a, b in zip(c1[:3], c2[:3])) ** 0.5
-            
-            # Precyzyjna kwantyzacja kolorów - więcej kolorów, mniejsze grupy
-            color_frequency = {}
-            for pixel in pixels:
-                if isinstance(pixel, int):
-                    pixel = (pixel, pixel, pixel)
-                
-                # Zmniejszona kwantyzacja dla lepszych szczegółów
-                quantized = tuple(int(c // 16) * 16 for c in pixel[:3])  # 16 zamiast 32
-                color_frequency[quantized] = color_frequency.get(quantized, 0) + 1
-            
-            # Wybierz więcej kolorów (maksymalnie 16)
-            sorted_colors = sorted(color_frequency.items(), key=lambda x: x[1], reverse=True)[:16]
-            
-            # Bardziej precyzyjna filtracja kolorów
-            filtered_colors = []
-            for color, freq in sorted_colors:
-                brightness = sum(color) / 3
-                # Mniej restrykcyjne filtrowanie
-                if freq > len(pixels) * 0.002:  # Minimum 0.2% pikseli
-                    filtered_colors.append((color, freq))
-            
-            if not filtered_colors:
-                filtered_colors = sorted_colors[:5]  # Fallback
+            # Utwórz mapę krawędzi
+            edge_pixels = list(edges.getdata())
+            gray_pixels = list(gray.getdata())
             
             # SVG wymiary - wyższa rozdzielczość
-            svg_width = 600  # Zwiększone z 400
-            svg_height = int(600 * height / width) if width > 0 else 450
+            svg_width = 800  # Zwiększone dla lepszych ścieżek
+            svg_height = int(800 * height / width) if width > 0 else 600
             
             svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
      width="{svg_width}" height="{svg_height}" viewBox="0 0 {svg_width} {svg_height}">
-  <title>High-Detail Embroidery Pattern</title>
+  <title>Vector Path Embroidery Pattern</title>
   <g id="embroidery-paths">'''
             
             # Skalowanie
@@ -146,130 +121,268 @@ def create_vector_svg_from_image(image_path, svg_path):
             
             path_count = 0
             
-            # Szczegółowa mapa pikseli dla każdego koloru
-            for color_group, frequency in filtered_colors:
-                rgb = f"rgb({color_group[0]},{color_group[1]},{color_group[2]})"
+            # Funkcja do znajdowania konturów
+            def find_contours(threshold=50):
+                contours = []
+                visited = set()
                 
-                # Znajdź wszystkie piksele podobne do tego koloru z mniejszą tolerancją
-                color_pixels = []
-                tolerance = 25  # Zmniejszona tolerancja dla lepszych szczegółów
-                
-                for y in range(height):
-                    for x in range(width):
-                        pixel_idx = y * width + x
-                        if pixel_idx < len(pixels):
-                            pixel = pixels[pixel_idx]
-                            if isinstance(pixel, int):
-                                pixel = (pixel, pixel, pixel)
-                            
-                            if color_distance(pixel, color_group) < tolerance:
-                                color_pixels.append((x, y))
-                
-                # Twórz szczegółowe kształty zamiast prostych prostokątów
-                if color_pixels and len(color_pixels) > 2:
-                    # Grupuj piksele w bardziej precyzyjne regiony
-                    processed = set()
-                    
-                    for px, py in color_pixels:
-                        if (px, py) in processed:
+                for y in range(1, height - 1):
+                    for x in range(1, width - 1):
+                        if (x, y) in visited:
                             continue
                         
-                        # Znajdź region zaczynający się od tego piksela
-                        region = []
-                        to_process = [(px, py)]
-                        
-                        while to_process and len(region) < 100:  # Limit rozmiaru regionu
-                            if not to_process:
-                                break
-                            x, y = to_process.pop(0)
-                            if (x, y) in processed:
-                                continue
-                            
-                            processed.add((x, y))
-                            region.append((x, y))
-                            
-                            # Sprawdź tylko bezpośrednich sąsiadów dla precyzji
-                            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                                nx, ny = x + dx, y + dy
-                                if (nx, ny) in color_pixels and (nx, ny) not in processed and len(to_process) < 50:
-                                    to_process.append((nx, ny))
-                        
-                        if len(region) >= 1:  # Każdy piksel może być osobnym kształtem
-                            # Twórz precyzyjne małe kształty
-                            if len(region) == 1:
-                                # Pojedynczy piksel jako mały prostokąt
-                                x, y = region[0]
-                                rect_x = x * scale_x
-                                rect_y = y * scale_y
-                                rect_w = scale_x * 0.8
-                                rect_h = scale_y * 0.8
-                                
-                                path_data = f"M {rect_x:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y + rect_h:.2f} L {rect_x:.2f},{rect_y + rect_h:.2f} Z"
-                                
-                                svg_content += f'''
-    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.1"/>'''
-                                path_count += 1
-                            else:
-                                # Większy region - twórz kontur
-                                min_x = min(p[0] for p in region)
-                                max_x = max(p[0] for p in region)
-                                min_y = min(p[1] for p in region)
-                                max_y = max(p[1] for p in region)
-                                
-                                # Sortuj punkty regionu dla lepszego konturu
-                                region_points = sorted(region)
-                                
-                                # Twórz ścieżkę konturową
-                                if len(region_points) > 3:
-                                    path_data = f"M {min_x * scale_x:.2f},{min_y * scale_y:.2f}"
-                                    
-                                    # Dodaj punkty konturu
-                                    for i, (x, y) in enumerate(region_points[::max(1, len(region_points)//8)]):
-                                        path_data += f" L {x * scale_x:.2f},{y * scale_y:.2f}"
-                                    
-                                    path_data += " Z"
-                                    
-                                    svg_content += f'''
-    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.2"/>'''
-                                    path_count += 1
-                                else:
-                                    # Mały region jako prostokąt
-                                    rect_x = min_x * scale_x
-                                    rect_y = min_y * scale_y
-                                    rect_w = (max_x - min_x + 1) * scale_x
-                                    rect_h = (max_y - min_y + 1) * scale_y
-                                    
-                                    path_data = f"M {rect_x:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y + rect_h:.2f} L {rect_x:.2f},{rect_y + rect_h:.2f} Z"
-                                    
-                                    svg_content += f'''
-    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.2"/>'''
-                                    path_count += 1
-            
-            # Jeśli nie utworzono wystarczająco ścieżek, dodaj szczegółową siatkę
-            if path_count < 50:
-                grid_size = 3  # Bardzo mała siatka dla szczegółów
-                for y in range(0, height, grid_size):
-                    for x in range(0, width, grid_size):
                         pixel_idx = y * width + x
-                        if pixel_idx < len(pixels):
-                            pixel = pixels[pixel_idx]
+                        if pixel_idx < len(edge_pixels):
+                            # Sprawdź czy to krawędź
+                            edge_val = sum(edge_pixels[pixel_idx][:3]) / 3 if isinstance(edge_pixels[pixel_idx], tuple) else edge_pixels[pixel_idx]
+                            
+                            if edge_val > threshold:
+                                # Rozpocznij śledzenie konturu
+                                contour = trace_contour(x, y, edge_pixels, visited, threshold)
+                                if len(contour) > 3:  # Minimum 3 punkty dla konturu
+                                    contours.append(contour)
+                
+                return contours
+            
+            def trace_contour(start_x, start_y, edge_data, visited, threshold):
+                contour = []
+                current_x, current_y = start_x, start_y
+                
+                # Kierunki: prawo, dół, lewo, góra, i po przekątnej
+                directions = [(1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (-1, -1), (1, -1), (-1, 1)]
+                
+                while len(contour) < 1000:  # Limit długości konturu
+                    if (current_x, current_y) in visited:
+                        break
+                    
+                    visited.add((current_x, current_y))
+                    contour.append((current_x, current_y))
+                    
+                    # Znajdź następny punkt konturu
+                    next_found = False
+                    for dx, dy in directions:
+                        next_x = current_x + dx
+                        next_y = current_y + dy
+                        
+                        if (0 <= next_x < width and 0 <= next_y < height and 
+                            (next_x, next_y) not in visited):
+                            
+                            pixel_idx = next_y * width + next_x
+                            if pixel_idx < len(edge_data):
+                                edge_val = sum(edge_data[pixel_idx][:3]) / 3 if isinstance(edge_data[pixel_idx], tuple) else edge_data[pixel_idx]
+                                
+                                if edge_val > threshold:
+                                    current_x, current_y = next_x, next_y
+                                    next_found = True
+                                    break
+                    
+                    if not next_found:
+                        break
+                
+                return contour
+            
+            # Znajdź kontury
+            contours = find_contours(30)  # Próg dla detekcji krawędzi
+            
+            # Twórz ścieżki SVG z konturów
+            for contour in contours:
+                if len(contour) < 3:
+                    continue
+                
+                # Uprość kontur (usuń zbędne punkty)
+                simplified_contour = simplify_contour(contour)
+                
+                if len(simplified_contour) >= 3:
+                    # Utwórz ścieżkę SVG
+                    path_data = create_smooth_path(simplified_contour, scale_x, scale_y)
+                    
+                    # Określ kolor na podstawie oryginalnego obrazu
+                    avg_x = sum(p[0] for p in simplified_contour) // len(simplified_contour)
+                    avg_y = sum(p[1] for p in simplified_contour) // len(simplified_contour)
+                    
+                    if 0 <= avg_x < width and 0 <= avg_y < height:
+                        pixel_idx = avg_y * width + avg_x
+                        original_pixels = list(img_analysis.getdata())
+                        if pixel_idx < len(original_pixels):
+                            pixel = original_pixels[pixel_idx]
                             if isinstance(pixel, int):
                                 pixel = (pixel, pixel, pixel)
                             
-                            # Dodaj wszystkie piksele z wystarczającą intensywnością
-                            brightness = sum(pixel) / 3
-                            if brightness < 240:  # Mniej restrykcyjne
-                                rect_x = x * scale_x
-                                rect_y = y * scale_y
-                                rect_w = grid_size * scale_x * 0.9
-                                rect_h = grid_size * scale_y * 0.9
+                            rgb = f"rgb({pixel[0]},{pixel[1]},{pixel[2]})"
+                        else:
+                            rgb = "rgb(0,0,0)"
+                    else:
+                        rgb = "rgb(0,0,0)"
+                    
+                    svg_content += f'''
+    <path d="{path_data}" fill="none" stroke="{rgb}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'''
+                    path_count += 1
+            
+            # Jeśli nie znaleziono wystarczająco konturów, dodaj alternatywną metodę
+            if path_count < 20:
+                # Utwórz ścieżki na podstawie gradientu jasności
+                for y in range(0, height, 8):
+                    for x in range(0, width, 8):
+                        # Sprawdź czy to interesujący obszar
+                        if has_interesting_features(x, y, gray_pixels, width, height):
+                            # Twórz lokalną ścieżkę
+                            local_path = create_local_path(x, y, gray_pixels, width, height)
+                            if local_path:
+                                path_data = create_smooth_path(local_path, scale_x, scale_y)
                                 
-                                rgb = f"rgb({pixel[0]},{pixel[1]},{pixel[2]})"
-                                path_data = f"M {rect_x:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y:.2f} L {rect_x + rect_w:.2f},{rect_y + rect_h:.2f} L {rect_x:.2f},{rect_y + rect_h:.2f} Z"
+                                # Określ kolor
+                                pixel_idx = y * width + x
+                                original_pixels = list(img_analysis.getdata())
+                                if pixel_idx < len(original_pixels):
+                                    pixel = original_pixels[pixel_idx]
+                                    if isinstance(pixel, int):
+                                        pixel = (pixel, pixel, pixel)
+                                    rgb = f"rgb({pixel[0]},{pixel[1]},{pixel[2]})"
+                                else:
+                                    rgb = "rgb(100,100,100)"
                                 
                                 svg_content += f'''
-    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.1"/>'''
+    <path d="{path_data}" fill="none" stroke="{rgb}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'''
                                 path_count += 1
+            
+            def simplify_contour(contour, tolerance=2):
+                """Uprość kontur usuwając zbędne punkty"""
+                if len(contour) <= 3:
+                    return contour
+                
+                simplified = [contour[0]]
+                
+                for i in range(1, len(contour) - 1):
+                    curr = contour[i]
+                    prev = simplified[-1]
+                    next_point = contour[i + 1]
+                    
+                    # Oblicz odległość od linii łączącej poprzedni i następny punkt
+                    distance = point_to_line_distance(curr, prev, next_point)
+                    
+                    if distance > tolerance:
+                        simplified.append(curr)
+                
+                simplified.append(contour[-1])
+                return simplified
+            
+            def point_to_line_distance(point, line_start, line_end):
+                """Oblicz odległość punktu od linii"""
+                x0, y0 = point
+                x1, y1 = line_start
+                x2, y2 = line_end
+                
+                # Jeśli linia jest punktem
+                if x1 == x2 and y1 == y2:
+                    return ((x0 - x1) ** 2 + (y0 - y1) ** 2) ** 0.5
+                
+                # Odległość punktu od linii
+                A = y2 - y1
+                B = x1 - x2
+                C = x2 * y1 - x1 * y2
+                
+                return abs(A * x0 + B * y0 + C) / (A ** 2 + B ** 2) ** 0.5
+            
+            def create_smooth_path(contour, scale_x, scale_y):
+                """Twórz gładką ścieżkę SVG z użyciem krzywych Béziera"""
+                if len(contour) < 3:
+                    return ""
+                
+                # Skaluj punkty
+                scaled_points = [(x * scale_x, y * scale_y) for x, y in contour]
+                
+                # Rozpocznij ścieżkę
+                path_data = f"M {scaled_points[0][0]:.2f},{scaled_points[0][1]:.2f}"
+                
+                # Twórz gładkie krzywe między punktami
+                for i in range(1, len(scaled_points)):
+                    curr = scaled_points[i]
+                    prev = scaled_points[i - 1]
+                    
+                    # Użyj krzywych Béziera dla gładkości
+                    if i < len(scaled_points) - 1:
+                        next_point = scaled_points[i + 1]
+                        
+                        # Oblicz punkty kontrolne
+                        control_factor = 0.3
+                        cx1 = prev[0] + control_factor * (curr[0] - prev[0])
+                        cy1 = prev[1] + control_factor * (curr[1] - prev[1])
+                        cx2 = curr[0] - control_factor * (next_point[0] - curr[0])
+                        cy2 = curr[1] - control_factor * (next_point[1] - curr[1])
+                        
+                        path_data += f" C {cx1:.2f},{cy1:.2f} {cx2:.2f},{cy2:.2f} {curr[0]:.2f},{curr[1]:.2f}"
+                    else:
+                        path_data += f" L {curr[0]:.2f},{curr[1]:.2f}"
+                
+                return path_data
+            
+            def has_interesting_features(x, y, gray_data, w, h):
+                """Sprawdź czy obszar ma interesujące cechy"""
+                if x + 8 >= w or y + 8 >= h:
+                    return False
+                
+                # Sprawdź wariancję jasności w małym obszarze
+                values = []
+                for dy in range(8):
+                    for dx in range(8):
+                        if y + dy < h and x + dx < w:
+                            pixel_idx = (y + dy) * w + (x + dx)
+                            if pixel_idx < len(gray_data):
+                                values.append(gray_data[pixel_idx])
+                
+                if len(values) < 4:
+                    return False
+                
+                # Oblicz wariancję
+                mean_val = sum(values) / len(values)
+                variance = sum((v - mean_val) ** 2 for v in values) / len(values)
+                
+                return variance > 500  # Próg dla interesujących obszarów
+            
+            def create_local_path(x, y, gray_data, w, h):
+                """Twórz lokalną ścieżkę na podstawie gradientu"""
+                path_points = []
+                
+                # Znajdź punkty o wysokim gradiencie w okolicy
+                for dy in range(-4, 5, 2):
+                    for dx in range(-4, 5, 2):
+                        px, py = x + dx, y + dy
+                        if 0 <= px < w and 0 <= py < h:
+                            if has_high_gradient(px, py, gray_data, w, h):
+                                path_points.append((px, py))
+                
+                # Sortuj punkty by utworzyć ścieżkę
+                if len(path_points) > 2:
+                    path_points.sort(key=lambda p: (p[0], p[1]))
+                    return path_points
+                
+                return None
+            
+            def has_high_gradient(x, y, gray_data, w, h):
+                """Sprawdź czy punkt ma wysoki gradient"""
+                if x <= 0 or x >= w-1 or y <= 0 or y >= h-1:
+                    return False
+                
+                center_idx = y * w + x
+                if center_idx >= len(gray_data):
+                    return False
+                
+                center_val = gray_data[center_idx]
+                
+                # Sprawdź różnice z sąsiadami
+                neighbors = [
+                    (x-1, y), (x+1, y), (x, y-1), (x, y+1)
+                ]
+                
+                max_diff = 0
+                for nx, ny in neighbors:
+                    if 0 <= nx < w and 0 <= ny < h:
+                        neighbor_idx = ny * w + nx
+                        if neighbor_idx < len(gray_data):
+                            diff = abs(gray_data[neighbor_idx] - center_val)
+                            max_diff = max(max_diff, diff)
+                
+                return max_diff > 30  # Próg dla wysokiego gradientu
             
             svg_content += '''
   </g>
@@ -279,11 +392,11 @@ def create_vector_svg_from_image(image_path, svg_path):
             with open(svg_path, 'w', encoding='utf-8') as f:
                 f.write(svg_content)
                 
-            logger.info(f"Utworzono szczegółową wektoryzację SVG z {path_count} ścieżkami: {svg_path}")
+            logger.info(f"Utworzono wektoryzację z {path_count} ścieżkami konturowymi: {svg_path}")
             return True
             
     except Exception as e:
-        logger.error(f"Błąd tworzenia szczegółowego SVG: {e}")
+        logger.error(f"Błąd tworzenia ścieżek SVG: {e}")
         return False
 
 def trace_with_simple_vectorization(image_path, svg_path):
