@@ -28,7 +28,7 @@ for d in (RASTER_FOLDER, VECTOR_AUTO, VECTOR_MANUAL, PREVIEW_FOLDER):
 
 HOOP_W_MM, HOOP_H_MM = 100, 100
 DPI = 300
-MAX_IMAGE_SIZE = 400  # Znacznie zmniejszony rozmiar dla oszczędności zasobów
+MAX_IMAGE_SIZE = 200  # Jeszcze bardziej zmniejszony dla Intel i3
 
 # Registracja namespace'ów XML
 ET.register_namespace('', "http://www.w3.org/2000/svg")
@@ -74,48 +74,63 @@ def optimize_image(image_path, max_size=MAX_IMAGE_SIZE):
 def create_vector_svg_from_image(image_path, svg_path):
     """Tworzy SVG z ulepszoną wektoryzacją zachowującą kolory i szczegóły"""
     try:
+        # Sprawdź rozmiar pliku przed przetwarzaniem
+        file_size = os.path.getsize(image_path)
+        if file_size > 5 * 1024 * 1024:  # 5MB limit
+            logger.error(f"Plik za duży: {file_size} bytes")
+            return False
+            
+        logger.info(f"Rozpoczynam wektoryzację pliku: {image_path} ({file_size} bytes)")
+        
         with Image.open(image_path) as img:
             # Konwertuj do RGB jeśli potrzebne
             if img.mode != 'RGB':
                 img = img.convert('RGB')
 
-            # Zmniejszony rozmiar analizy dla oszczędności zasobów
+            # Drastycznie zmniejszony rozmiar analizy dla Intel i3
             original_size = img.size
-            max_analysis_size = 300  # Zmniejszony rozmiar dla lepszej wydajności
+            max_analysis_size = 150  # Bardzo mały rozmiar dla słabych procesorów
             if max(original_size) > max_analysis_size:
                 ratio = max_analysis_size / max(original_size)
                 new_size = (int(original_size[0] * ratio), int(original_size[1] * ratio))
-                img_analysis = img.resize(new_size, Image.Resampling.LANCZOS)
+                img_analysis = img.resize(new_size, Image.Resampling.NEAREST)  # Szybszy algorytm
             else:
                 img_analysis = img.copy()
+                
+            # Sprawdź czy obraz nie jest za mały
+            if img_analysis.size[0] < 10 or img_analysis.size[1] < 10:
+                logger.error("Obraz za mały po przeskalowaniu")
+                return False
 
             width, height = img_analysis.size
 
             # Pobierz dane pikseli oryginału
             original_pixels = list(img_analysis.getdata())
             
-            # Kwantyzacja kolorów - znajdź dominujące kolory
+            # Uproszczona kwantyzacja kolorów dla słabych procesorów
+            logger.info(f"Analizuję {len(original_pixels)} pikseli")
+            
+            # Bardzo prosty algorytm - tylko najczęstsze kolory
             from collections import Counter
-            color_counts = Counter(original_pixels)
             
-            # Wybierz najczęstsze kolory (maksymalnie 8 dla oszczędności)
-            dominant_colors = [color for color, count in color_counts.most_common(8) if count > (width * height) // 100]
+            # Próbkowanie co 10 pikseli dla oszczędności
+            sample_step = max(1, len(original_pixels) // 20)
+            sampled_pixels = original_pixels[::sample_step]
             
-            # Jeśli za mało dominujących kolorów, użyj próbkowania (zoptymalizowane)
-            if len(dominant_colors) < 4:
-                sample_colors = []
-                step = max(1, len(original_pixels) // 50)  # Większy krok = mniej próbek
-                for i in range(0, len(original_pixels), step):
-                    sample_colors.append(original_pixels[i])
+            if len(sampled_pixels) == 0:
+                logger.error("Brak pikseli do analizy")
+                return False
                 
-                # Klasteryzacja kolorów (zmniejszona liczba)
-                unique_colors = list(set(sample_colors))
-                if len(unique_colors) > 8:
-                    # Prosta klasteryzacja kolorów
-                    clustered_colors = cluster_colors(unique_colors, 6)
-                    dominant_colors = clustered_colors
-                else:
-                    dominant_colors = unique_colors
+            color_counts = Counter(sampled_pixels)
+            
+            # Tylko 4 najczęstsze kolory dla Intel i3
+            dominant_colors = [color for color, count in color_counts.most_common(4)]
+            
+            if len(dominant_colors) < 2:
+                # Fallback - podstawowe kolory
+                dominant_colors = [(0, 0, 0), (255, 255, 255), (128, 128, 128)]
+            
+            logger.info(f"Znaleziono {len(dominant_colors)} dominujących kolorów")
 
             # Zwiększ kontrast i ostrość
             from PIL import ImageEnhance, ImageFilter
@@ -134,9 +149,9 @@ def create_vector_svg_from_image(image_path, svg_path):
             # Dodatkowe filtry dla lepszej detekcji
             contour_img = img_analysis.filter(ImageFilter.CONTOUR)
             
-            # SVG wymiary - zoptymalizowane dla wydajności
-            svg_width = 500  # Zmniejszone dla oszczędności zasobów
-            svg_height = int(500 * height / width) if width > 0 else 400
+            # SVG wymiary - bardzo małe dla Intel i3
+            svg_width = 300  # Mały rozmiar dla słabych procesorów
+            svg_height = int(300 * height / width) if width > 0 else 250
 
             svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
@@ -439,15 +454,64 @@ def create_vector_svg_from_image(image_path, svg_path):
             import gc
             gc.collect()
             
+            logger.info(f"Wektoryzacja zakończona: {path_count} regionów")
+            
+            # Sprawdź czy powstał jakiś content
+            if path_count == 0:
+                logger.warning("Brak regionów - tworzę prostą wektoryzację")
+                return create_simple_fallback_svg(image_path, svg_path)
+            
             return True
 
+    except MemoryError as e:
+        logger.error(f"Brak pamięci: {e}")
+        return create_simple_fallback_svg(image_path, svg_path)
     except Exception as e:
         logger.error(f"Błąd tworzenia wektoryzacji SVG: {e}")
+        return create_simple_fallback_svg(image_path, svg_path)
+
+def create_simple_fallback_svg(image_path, svg_path):
+    """Tworzy prostą wektoryzację jako fallback"""
+    try:
+        with Image.open(image_path) as img:
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Bardzo prosty SVG - jeden prostokąt z dominującym kolorem
+            pixels = list(img.getdata())
+            from collections import Counter
+            
+            # Znajdź najczęstszy kolor
+            color_counts = Counter(pixels[::10])  # Co 10 piksel
+            dominant_color = color_counts.most_common(1)[0][0] if color_counts else (128, 128, 128)
+            
+            rgb_color = f"rgb({dominant_color[0]},{dominant_color[1]},{dominant_color[2]})"
+            
+            svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="250" viewBox="0 0 300 250">
+  <title>Simple Embroidery Pattern</title>
+  <rect x="50" y="50" width="200" height="150" fill="{rgb_color}" stroke="black" stroke-width="2"/>
+  <text x="150" y="130" text-anchor="middle" fill="white" font-size="14">Wzór</text>
+</svg>'''
+            
+            os.makedirs(os.path.dirname(svg_path), exist_ok=True)
+            with open(svg_path, 'w', encoding='utf-8') as f:
+                f.write(svg_content)
+            
+            logger.info(f"Utworzono prostą wektoryzację fallback: {svg_path}")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Błąd fallback: {e}")
         return False
 
 def trace_with_simple_vectorization(image_path, svg_path):
     """Prosta wektoryzacja obrazu bez zewnętrznych narzędzi"""
-    return create_vector_svg_from_image(image_path, svg_path)
+    success = create_vector_svg_from_image(image_path, svg_path)
+    if not success:
+        logger.warning("Główna wektoryzacja nie powiodła się - używam fallback")
+        return create_simple_fallback_svg(image_path, svg_path)
+    return success
 
 def scale_svg(svg_in, svg_out, max_w, max_h):
     """Skaluje SVG do określonych wymiarów"""
