@@ -1,0 +1,174 @@
+VERSION="${VERSION:-$(echo ${GITHUB_REF} | sed -e 's|refs/heads/||' -e 's|refs/tags/||' -e 's|/|-|g')}"
+OS="${BUILD:-$(uname)}"
+ARCH="$(uname -m)"
+
+if [ "$BUILD" = "osx" ]; then
+    cp -a addons icons locales print LICENSE VERSION palettes symbols fonts tiles dbus inx dist/inkstitch.app/Contents/Resources
+    # adding version to Info.plist
+    plutil -replace CFBundleShortVersionString -string ${VERSION} dist/inkstitch.app/Contents/Info.plist
+    rm -rf dist/inkstitch/
+    # Install location for pkgbuild
+    PKG_INSTALL_PATH="/tmp/inkstitch/"
+
+    # inside the scripts folder are:
+    # - preinstaller (checks for previously installed inkstitch and deletes it, Inkscape check with error message) and
+    # - postinstaller (moves inkstitch folder from /tmp to user Inkscape extensions folder in $HOME)
+    # The postinstaller is a workaround for a proper way to install in user $HOME space
+
+    # Build on GitHub will be handled differently from local builds.
+    # Local builds will not be signed nor notarized. They are run to produce releases for legacy versions of macOS.
+    # Notarization for development branches can be forced with this variable set to true
+    NOTARIZE_DEVELOPMENT_BUILDS=false
+
+    if [[ ! -z "${GITHUB_REF}" ]]; then
+        # This code signs and notarize the inkstitch.app
+        DEV_IDENT="Developer ID Application: Lex Neva (929A568N58)"
+        echo "Signing of inkstitch.app"
+        # signing the binary may fix notary issue
+        /usr/bin/codesign -s "${DEV_IDENT}" \
+                        --deep \
+                        --force \
+                        --entitlements installer_scripts/entitlements.plist \
+                        -o runtime \
+                        --timestamp \
+                        dist/inkstitch.app/Contents/MacOS/inkstitch -v
+        # last signing before packaging
+        /usr/bin/codesign -s "${DEV_IDENT}" \
+                        --deep \
+                        --force \
+                        --entitlements installer_scripts/entitlements.plist \
+                        -o runtime \
+                        --timestamp \
+                        dist/inkstitch.app -v
+        echo "Running pkgbuild"
+        INSTALLER_IDENT="Developer ID Installer: Lex Neva (929A568N58)"
+        /usr/bin/pkgbuild --root dist/inkstitch.app \
+                        -s "${INSTALLER_IDENT}" \
+                        --ownership recommended \
+                        --identifier org.inkstitch.installer \
+                        --version ${VERSION} \
+                        --scripts installer_scripts/scripts \
+                        --install-location ${PKG_INSTALL_PATH}inkstitch.app \
+                        artifacts/inkstitch-${VERSION}-${OS}-${ARCH}.pkg
+        if [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9.]+ || $NOTARIZE_DEVELOPMENT_BUILDS == true ]]; then
+            echo "Notary starting"
+            echo "Adding keychain item for notarytool"
+            xcrun notarytool store-credentials "inkstitch-profile"  \
+                                                --apple-id "${NOTARY_ACCOUNT}" \
+                                                --team-id '929A568N58' \
+                                                --password "${NOTARY_PASSWORD}"
+            echo "Invoking notary process"
+            xcrun notarytool submit -f json --wait \
+                                    --keychain-profile "inkstitch-profile" \
+                                    artifacts/inkstitch-${VERSION}-${OS}-${ARCH}.pkg 2>&1 | tee /tmp/notarization_info.json
+            echo "Stapling the pkg for release"
+            xcrun stapler staple artifacts/inkstitch-${VERSION}-${OS}-${ARCH}.pkg
+            echo "Fetching the Notary Log"
+            # code snippet is from https://github.com/ddev/signing_tools/blob/master/macos_notarize.sh
+            status=$(jq -r .status </tmp/notarization_info.json)
+            id=$(jq -r .id </tmp/notarization_info.json)
+            echo "status=${status} id=${id}"
+            xcrun notarytool log --apple-id "${NOTARY_ACCOUNT}" --team-id '929A568N58'  --password "${NOTARY_PASSWORD}" ${id} -f json >/tmp/notarization_log.json
+            issues=$(jq -r .issues </tmp/notarization_log.json)
+            if [ "$issues" != "null" ]; then
+                printf "There are issues with the notarization (${issues})\n"
+                printf "=== Log output === \n$(cat /tmp/notarization_log.json)\n"
+                exit 7;
+            fi;
+        fi
+    else
+        # local builds will not be signed or notarized
+        pkgbuild --root dist/inkstitch.app \
+                --ownership recommended \
+                --identifier org.inkstitch.installer \
+                --version ${VERSION} \
+                --scripts installer_scripts/scripts \
+                --install-location ${PKG_INSTALL_PATH}inkstitch.app \
+                artifacts/inkstitch-${VERSION}-${OS}-${ARCH}.pkg
+    fi
+    # Creating the zip for Drag n' Drop install
+    cd dist
+    7z a ../artifacts/inkstitch-${VERSION}-${OS}-${ARCH}.zip *
+    cd ..
+else
+    cp -a addons palettes symbols fonts tiles dbus inx LICENSE VERSION dist/inkstitch
+    cp -a icons locales print dist/inkstitch/bin
+fi
+
+if [ "$BUILD" = "windows" ]; then
+    # build the installer locally
+    # remotely it will be called through build.yml after signing
+    if [[ -z "${GITHUB_REF}" ]]; then
+        bash bin/build-windows-installer
+    fi
+fi
+
+if [ "$BUILD" = "linux" ] || [ "$BUILD" = "linux32" ]; then
+    if [[ "$VERSION" =~ ^v[0-9][.0-9]+$ ]]; then
+        VERSION=${VERSION#v}
+    else
+        # dpkg requires versions to start with a number, so we have to add
+        # 0.0.1 for development builds
+        VERSION="0.0.1-${VERSION}"
+    fi
+
+
+    echo -n "$INKSTITCH_GPG_KEY" | base64 -d | gpg --import
+    cat <<EOF > $HOME/.rpmmacros
+%_gpg_name EA93BCE2CCD0FB2E77B2CC29E8120E50709E5C44
+%_signature gpg
+EOF
+
+    # set the rpm file name for cpu arch
+    if [[ "$BUILD" = "linux32" ]]; then
+        linux_arch="i386"
+    else
+        linux_arch=${ARCH}
+    fi
+
+    echo "Creating deb"
+    deb_version="$(sed -E 's/[^a-zA-Z0-9.+]/./g' <<< "$VERSION")"
+    fpm -s dir \
+        -t deb \
+        -n inkstitch \
+        -v "$deb_version" \
+        -d "inkscape >= 1.0.0" \
+        --deb-compression xz \
+        --license "GPL-3.0" \
+        --description "An open-source machine embroidery design platform based on Inkscape" \
+        --url "https://inkstitch.org" \
+        --maintainer "maintainer@inkstitch.org" \
+        --after-install bin/after-install \
+        --before-remove bin/before-remove \
+        --verbose \
+        dist/inkstitch=/opt
+
+    echo "Creating rpm"
+    fpm -s dir \
+        -t rpm \
+        -n inkstitch \
+        -v "$VERSION" \
+        -d "inkscape >= 1.0.0" \
+        -a "$linux_arch" \
+        --rpm-compression xz \
+        --license "GPL-3.0" \
+        --description "An open-source machine embroidery design platform based on Inkscape" \
+        --url "https://inkstitch.org"  \
+        --maintainer "maintainer@inkstitch.org" \
+        --after-install bin/after-install \
+        --before-remove bin/before-remove \
+        --verbose \
+        dist/inkstitch=/opt
+
+    rpmsign --addsign inkstitch*.rpm
+    mv inkstitch*.deb inkstitch*.rpm artifacts/
+
+    # set file name for each cpu arch
+    if [[ "$BUILD" = "linux32" ]]; then
+        tar -C dist -Jcf artifacts/inkstitch-${VERSION}-${OS}-i386.tar.xz inkstitch
+        cat "$(dirname "$0")/linux-sh-installer" artifacts/inkstitch-${VERSION}-${OS}-i386.tar.xz > artifacts/inkstitch-${VERSION}-${OS}-i386.sh
+    else
+        tar -C dist -Jcf artifacts/inkstitch-${VERSION}-${OS}-${ARCH}.tar.xz inkstitch
+        cat "$(dirname "$0")/linux-sh-installer" artifacts/inkstitch-${VERSION}-${OS}-${ARCH}.tar.xz > artifacts/inkstitch-${VERSION}-${OS}-${ARCH}.sh
+    fi
+fi

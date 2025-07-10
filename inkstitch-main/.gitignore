@@ -1,0 +1,36 @@
+__pycache__
+*.swp
+*.kate-swp
+*.pyc
+*.spec
+*.zip
+*.tar.gz
+*.po
+*.log
+dist/
+build/
+locales/
+/inx/
+.pydevproject
+.project
+/.idea
+/.vscode
+/VERSION
+/src/
+.DS_STORE
+.DS_Store
+
+# debug and profile files
+logs/
+/DEBUG.toml
+/LOGGING.toml
+/LOGGING[0-9]*.toml
+/debug*
+/.debug*
+/inkstitch_debug*
+
+# old debug files - to be removed
+/DEBUG*.ini
+/DEBUG
+/PROFILE
+/profile*
