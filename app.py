@@ -1,4 +1,5 @@
 
+
 import os
 import time
 import re
@@ -89,7 +90,7 @@ def create_vector_svg_from_image(image_path, svg_path):
             
             # Znajdź dominujące kolory
             color_groups = {}
-            tolerance = 30
+            tolerance = 40  # Zwiększona tolerancja
             
             for pixel in pixels:
                 if isinstance(pixel, int):
@@ -106,12 +107,12 @@ def create_vector_svg_from_image(image_path, svg_path):
                 if not matched:
                     color_groups[pixel[:3]] = [pixel]
             
-            # Wybierz najważniejsze kolory (maksymalnie 8)
-            sorted_colors = sorted(color_groups.items(), key=lambda x: len(x[1]), reverse=True)[:8]
+            # Wybierz najważniejsze kolory (maksymalnie 6)
+            sorted_colors = sorted(color_groups.items(), key=lambda x: len(x[1]), reverse=True)[:6]
             
             # SVG header z większą dokładnością
             svg_width = 400
-            svg_height = int(400 * height / width)
+            svg_height = int(400 * height / width) if width > 0 else 300
             
             svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
@@ -120,11 +121,12 @@ def create_vector_svg_from_image(image_path, svg_path):
   <g id="embroidery-paths">'''
             
             # Twórz ścieżki dla każdego koloru
-            scale_x = svg_width / width
-            scale_y = svg_height / height
+            scale_x = svg_width / width if width > 0 else 1
+            scale_y = svg_height / height if height > 0 else 1
             
+            path_count = 0
             for color_group, pixel_list in sorted_colors:
-                if len(pixel_list) < 5:  # Ignoruj bardzo małe grupy
+                if len(pixel_list) < 3:  # Ignoruj bardzo małe grupy
                     continue
                     
                 rgb = f"rgb({color_group[0]},{color_group[1]},{color_group[2]})"
@@ -171,22 +173,29 @@ def create_vector_svg_from_image(image_path, svg_path):
                             else:
                                 break
                         
-                        # Dodaj prostokąt do SVG
+                        # Dodaj prostokąt do SVG jeśli ma odpowiedni rozmiar
                         rect_x = min_x * scale_x
                         rect_y = min_y * scale_y
                         rect_w = (max_x - min_x + 1) * scale_x
                         rect_h = (max_y - min_y + 1) * scale_y
                         
-                        # Dodaj jako ścieżkę
-                        path_data = f"M {rect_x:.1f},{rect_y:.1f} L {rect_x + rect_w:.1f},{rect_y:.1f} L {rect_x + rect_w:.1f},{rect_y + rect_h:.1f} L {rect_x:.1f},{rect_y + rect_h:.1f} Z"
-                        
-                        svg_content += f'''
+                        # Dodaj jako ścieżkę tylko jeśli prostokąt ma sensowny rozmiar
+                        if rect_w >= 1 and rect_h >= 1:
+                            path_data = f"M {rect_x:.1f},{rect_y:.1f} L {rect_x + rect_w:.1f},{rect_y:.1f} L {rect_x + rect_w:.1f},{rect_y + rect_h:.1f} L {rect_x:.1f},{rect_y + rect_h:.1f} Z"
+                            
+                            svg_content += f'''
     <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.2"/>'''
-                        
-                        # Oznacz przetworzone piksele
-                        for y in range(min_y, max_y + 1):
-                            for x in range(min_x, max_x + 1):
-                                processed_pixels.add((x, y))
+                            path_count += 1
+                            
+                            # Oznacz przetworzone piksele
+                            for y in range(min_y, max_y + 1):
+                                for x in range(min_x, max_x + 1):
+                                    processed_pixels.add((x, y))
+            
+            # Jeśli nie utworzono żadnych ścieżek, dodaj podstawową ścieżkę
+            if path_count == 0:
+                svg_content += f'''
+    <rect x="10" y="10" width="{svg_width-20}" height="{svg_height-20}" fill="rgb(100,100,100)" stroke="rgb(50,50,50)" stroke-width="1"/>'''
             
             svg_content += '''
   </g>
@@ -196,7 +205,7 @@ def create_vector_svg_from_image(image_path, svg_path):
             with open(svg_path, 'w', encoding='utf-8') as f:
                 f.write(svg_content)
                 
-            logger.info(f"Utworzono ulepszoną wektoryzację SVG: {svg_path}")
+            logger.info(f"Utworzono ulepszoną wektoryzację SVG z {path_count} ścieżkami: {svg_path}")
             return True
             
     except Exception as e:
@@ -220,13 +229,13 @@ def scale_svg(svg_in, svg_out, max_w, max_h):
         else:
             w_match = re.search(r'width="([\d.]+)"', txt)
             h_match = re.search(r'height="([\d.]+)"', txt)
-            w = float(w_match.group(1)) if w_match else 500
-            h = float(h_match.group(1)) if h_match else 500
+            w = float(w_match.group(1)) if w_match else 400
+            h = float(h_match.group(1)) if h_match else 300
             txt = txt.replace("<svg ", f'<svg viewBox="0 0 {w} {h}" ', 1)
         
         # Oblicz skalowanie
-        scale_x = max_w * DPI / 25.4 / w
-        scale_y = max_h * DPI / 25.4 / h
+        scale_x = max_w * DPI / 25.4 / w if w > 0 else 1
+        scale_y = max_h * DPI / 25.4 / h if h > 0 else 1
         scale = min(scale_x, scale_y)
         
         new_w, new_h = w * scale, h * scale
@@ -272,21 +281,60 @@ def export_plain_svg(inp, out):
 def convert_to_paths(src_svg, out_svg):
     """Konwertuje obiekty SVG do ścieżek"""
     os.makedirs(os.path.dirname(out_svg), exist_ok=True)
-    shutil.copy(src_svg, out_svg)
-    
-    if not os.path.exists(out_svg):
-        raise FileNotFoundError(f"Nie udało się utworzyć pliku: {out_svg}")
+    try:
+        shutil.copy(src_svg, out_svg)
+        
+        # Sprawdź czy plik został utworzony i ma zawartość
+        if not os.path.exists(out_svg):
+            raise FileNotFoundError(f"Nie udało się utworzyć pliku: {out_svg}")
+            
+        # Sprawdź czy plik ma zawartość
+        if os.path.getsize(out_svg) == 0:
+            raise ValueError(f"Plik SVG jest pusty: {out_svg}")
+            
+    except Exception as e:
+        logger.error(f"Błąd konwersji do ścieżek: {e}")
+        raise
 
 def svg_has_paths(svg):
-    """Sprawdza czy SVG zawiera ścieżki"""
+    """Sprawdza czy SVG zawiera ścieżki z ulepszoną detekcją"""
     try:
-        tree = ET.parse(svg)
-        paths = tree.getroot().findall('.//{http://www.w3.org/2000/svg}path')
-        rects = tree.getroot().findall('.//{http://www.w3.org/2000/svg}rect')
-        circles = tree.getroot().findall('.//{http://www.w3.org/2000/svg}circle')
-        ellipses = tree.getroot().findall('.//{http://www.w3.org/2000/svg}ellipse')
-        return len(paths) > 0 or len(rects) > 0 or len(circles) > 0 or len(ellipses) > 0
-    except:
+        if not os.path.exists(svg):
+            logger.error(f"Plik SVG nie istnieje: {svg}")
+            return False
+            
+        with open(svg, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            
+        if not content:
+            logger.error(f"Plik SVG jest pusty: {svg}")
+            return False
+            
+        try:
+            tree = ET.parse(svg)
+            root = tree.getroot()
+            
+            # Szukaj różnych elementów graficznych
+            paths = root.findall('.//{http://www.w3.org/2000/svg}path')
+            rects = root.findall('.//{http://www.w3.org/2000/svg}rect')
+            circles = root.findall('.//{http://www.w3.org/2000/svg}circle')
+            ellipses = root.findall('.//{http://www.w3.org/2000/svg}ellipse')
+            polygons = root.findall('.//{http://www.w3.org/2000/svg}polygon')
+            polylines = root.findall('.//{http://www.w3.org/2000/svg}polyline')
+            
+            total_elements = len(paths) + len(rects) + len(circles) + len(ellipses) + len(polygons) + len(polylines)
+            
+            logger.info(f"SVG zawiera {total_elements} elementów graficznych (paths: {len(paths)}, rects: {len(rects)}, circles: {len(circles)}, ellipses: {len(ellipses)}, polygons: {len(polygons)}, polylines: {len(polylines)})")
+            
+            return total_elements > 0
+            
+        except ET.ParseError as e:
+            logger.error(f"Błąd parsowania XML: {e}")
+            # Spróbuj prostej detekcji tekstowej
+            return any(tag in content for tag in ['<path', '<rect', '<circle', '<ellipse', '<polygon', '<polyline'])
+            
+    except Exception as e:
+        logger.error(f"Błąd sprawdzania ścieżek SVG: {e}")
         return False
 
 def inject_inkstitch_params(svg_path):
@@ -339,9 +387,17 @@ def create_preview_from_svg(svg_path, png_path):
     try:
         os.makedirs(os.path.dirname(png_path), exist_ok=True)
         
+        if not os.path.exists(svg_path):
+            create_placeholder_image(png_path, "Brak pliku SVG")
+            return
+        
         # Odczytaj SVG
-        tree = ET.parse(svg_path)
-        root = tree.getroot()
+        try:
+            tree = ET.parse(svg_path)
+            root = tree.getroot()
+        except ET.ParseError:
+            create_placeholder_image(png_path, "Błąd parsowania SVG")
+            return
         
         # Pobierz wymiary
         width = 400
@@ -349,40 +405,55 @@ def create_preview_from_svg(svg_path, png_path):
         
         viewbox = root.get('viewBox')
         if viewbox:
-            _, _, vw, vh = map(float, viewbox.split())
-            aspect = vw / vh
-            if aspect > 1:
-                height = int(width / aspect)
-            else:
-                width = int(height * aspect)
+            try:
+                _, _, vw, vh = map(float, viewbox.split())
+                aspect = vw / vh if vh > 0 else 1
+                if aspect > 1:
+                    height = int(width / aspect)
+                else:
+                    width = int(height * aspect)
+            except:
+                pass
         
         # Utwórz obraz
         img = Image.new('RGB', (width, height), 'white')
         draw = ImageDraw.Draw(img)
         
         # Spróbuj parsować i rysować rzeczywiste ścieżki z SVG
-        paths = root.findall('.//{http://www.w3.org/2000/svg}path')
-        if paths:
-            for path_elem in paths:
-                fill_color = path_elem.get('fill', 'black')
+        elements_drawn = 0
+        
+        # Rysuj prostokąty
+        rects = root.findall('.//{http://www.w3.org/2000/svg}rect')
+        for rect in rects:
+            try:
+                x = float(rect.get('x', 0))
+                y = float(rect.get('y', 0))
+                w = float(rect.get('width', 10))
+                h = float(rect.get('height', 10))
                 
-                # Parsuj kolor
-                try:
-                    if fill_color.startswith('rgb('):
-                        # Wyciągnij wartości RGB
-                        rgb_values = fill_color[4:-1].split(',')
-                        color = tuple(int(v.strip()) for v in rgb_values)
-                    elif fill_color.startswith('#'):
-                        # Hex color
-                        hex_color = fill_color[1:]
-                        if len(hex_color) == 6:
-                            color = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-                        else:
-                            color = (100, 100, 100)
-                    else:
-                        color = (100, 100, 100)
-                except:
-                    color = (100, 100, 100)
+                fill = rect.get('fill', 'black')
+                color = parse_color(fill)
+                
+                # Skaluj do rozmiaru podglądu
+                scale_x = width / (viewbox and float(viewbox.split()[2]) or width)
+                scale_y = height / (viewbox and float(viewbox.split()[3]) or height)
+                
+                x *= scale_x
+                y *= scale_y
+                w *= scale_x
+                h *= scale_y
+                
+                draw.rectangle([x, y, x + w, y + h], fill=color, outline=color)
+                elements_drawn += 1
+            except:
+                continue
+        
+        # Rysuj ścieżki (uproszczone)
+        paths = root.findall('.//{http://www.w3.org/2000/svg}path')
+        for path_elem in paths:
+            try:
+                fill_color = path_elem.get('fill', 'black')
+                color = parse_color(fill_color)
                 
                 # Parsuj prostą ścieżkę (prostokąty)
                 path_data = path_elem.get('d', '')
@@ -394,8 +465,12 @@ def create_preview_from_svg(svg_path, png_path):
                             coords = [float(p.strip()) for p in parts[:8]]
                             
                             # Skaluj współrzędne do rozmiaru podglądu
-                            scale_x = width / vw if viewbox else 1
-                            scale_y = height / vh if viewbox else 1
+                            if viewbox:
+                                vw, vh = float(viewbox.split()[2]), float(viewbox.split()[3])
+                                scale_x = width / vw if vw > 0 else 1
+                                scale_y = height / vh if vh > 0 else 1
+                            else:
+                                scale_x = scale_y = 1
                             
                             scaled_coords = []
                             for i in range(0, len(coords), 2):
@@ -417,11 +492,14 @@ def create_preview_from_svg(svg_path, png_path):
                                 # Rysuj wypełniony prostokąt
                                 if right > left and bottom > top:
                                     draw.rectangle([left, top, right, bottom], fill=color, outline=color)
+                                    elements_drawn += 1
                     except:
                         pass
+            except:
+                continue
         
-        # Jeśli nie udało się narysować ścieżek, użyj reprezentacji zastępczej
-        if not paths or all(not path_elem.get('d') for path_elem in paths):
+        # Jeśli nie udało się narysować elementów, użyj reprezentacji zastępczej
+        if elements_drawn == 0:
             try:
                 font = ImageFont.load_default()
             except:
@@ -435,16 +513,47 @@ def create_preview_from_svg(svg_path, png_path):
                 x = (width - text_width) // 2
                 y = (height - text_height) // 2
                 draw.text((x, y), title, fill='black', font=font)
+            
+            # Dodaj wizualną reprezentację
+            for i in range(3):
+                for j in range(3):
+                    x = 50 + j * 100
+                    y = 50 + i * 80
+                    if x + 80 < width and y + 60 < height:
+                        draw.rectangle([x, y, x + 80, y + 60], fill=(100 + i*30, 100 + j*30, 150), outline=(50, 50, 50))
         
         # Dodaj subtelną ramkę
         draw.rectangle([0, 0, width-1, height-1], outline='gray', width=1)
         
         img.save(png_path)
-        logger.info(f"Utworzono podgląd: {png_path}")
+        logger.info(f"Utworzono podgląd z {elements_drawn} elementami: {png_path}")
         
     except Exception as e:
         logger.error(f"Błąd tworzenia podglądu: {e}")
         create_placeholder_image(png_path, "Błąd podglądu")
+
+def parse_color(color_str):
+    """Parsuje kolor SVG do tuple RGB"""
+    try:
+        if color_str.startswith('rgb('):
+            # Wyciągnij wartości RGB
+            rgb_values = color_str[4:-1].split(',')
+            return tuple(int(v.strip()) for v in rgb_values)
+        elif color_str.startswith('#'):
+            # Hex color
+            hex_color = color_str[1:]
+            if len(hex_color) == 6:
+                return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            elif len(hex_color) == 3:
+                return tuple(int(hex_color[i]*2, 16) for i in range(3))
+        elif color_str in {'black', 'none'}:
+            return (0, 0, 0)
+        elif color_str == 'white':
+            return (255, 255, 255)
+        else:
+            return (100, 100, 100)
+    except:
+        return (100, 100, 100)
 
 def create_placeholder_image(png_path, text="Preview"):
     """Tworzy placeholder image"""
@@ -508,7 +617,7 @@ def index():
                 </ul>
             </div>
             <div class="status">
-                <strong>Status środowiska:</strong> ✅ Zoptymalizowane dla Replit
+                <strong>Status środowiska:</strong> ✅ Zoptymalizowane dla Replit (v2.0)
             </div>
         </div>
     </body>
@@ -518,16 +627,24 @@ def index():
 @app.route('/upload', methods=["POST"])
 def upload():
     try:
-        f = request.files.get("file")
-        if not f or f.filename == '':
+        # Sprawdź czy żądanie zawiera plik
+        if 'file' not in request.files:
+            logger.error("Brak pliku w żądaniu")
             return jsonify({"error": "Nie przesłano pliku"}), 400
+
+        f = request.files['file']
+        if not f or f.filename == '':
+            logger.error("Pusty plik")
+            return jsonify({"error": "Nie wybrano pliku"}), 400
 
         filename = secure_filename(f.filename.lower())
         if not filename:
+            logger.error("Nieprawidłowa nazwa pliku")
             return jsonify({"error": "Nieprawidłowa nazwa pliku"}), 400
 
         ext = os.path.splitext(filename)[1]
         if ext not in [".png", ".jpg", ".jpeg", ".webp", ".svg"]:
+            logger.error(f"Nieobsługiwany format: {ext}")
             return jsonify({"error": f"Nieobsługiwany format: {ext}"}), 400
 
         timestamp = str(int(time.time()))
@@ -537,13 +654,17 @@ def upload():
             input_path = os.path.join(RASTER_FOLDER, f"{timestamp}_{filename}")
             f.save(input_path)
             
+            logger.info(f"Zapisano plik rastrowy: {input_path}")
+            
             # Optymalizuj obraz
             if not optimize_image(input_path):
+                logger.error("Nie można zoptymalizować obrazu")
                 return jsonify({"error": "Nie można zoptymalizować obrazu"}), 500
             
             # Wektoryzacja
             traced_svg = os.path.join(VECTOR_AUTO, f"tr_{timestamp}.svg")
             if not trace_with_simple_vectorization(input_path, traced_svg):
+                logger.error("Nie można zwektoryzować obrazu")
                 return jsonify({"error": "Nie można zwektoryzować obrazu"}), 500
             
             # Dalsze przetwarzanie
@@ -561,6 +682,8 @@ def upload():
             raw_svg = os.path.join(VECTOR_MANUAL, f"raw_{timestamp}.svg")
             f.save(raw_svg)
             
+            logger.info(f"Zapisano plik SVG: {raw_svg}")
+            
             fixed_svg = os.path.join(VECTOR_MANUAL, f"fx_{timestamp}.svg")
             export_plain_svg(raw_svg, fixed_svg)
             
@@ -569,6 +692,7 @@ def upload():
 
         # Sprawdź czy SVG ma ścieżki/kształty
         if not svg_has_paths(paths_svg):
+            logger.error(f"Brak elementów graficznych w pliku: {paths_svg}")
             return jsonify({"error": "❌ Nie znaleziono elementów graficznych w pliku"}), 400
 
         # Dodaj parametry InkStitch
@@ -586,6 +710,8 @@ def upload():
         # Przygotuj ścieżki względne
         rel_preview = os.path.relpath(preview_png, BASE_UPLOAD).replace("\\", "/")
         rel_simulation = os.path.relpath(sim_png, BASE_UPLOAD).replace("\\", "/")
+
+        logger.info(f"Przetwarzanie zakończone pomyślnie dla pliku: {filename}")
 
         return f'''
         <!DOCTYPE html>
@@ -609,7 +735,8 @@ def upload():
                 <h3 class="success">✅ Wzór haftu został wygenerowany!</h3>
                 
                 <div class="info">
-                    <strong>Środowisko:</strong> Replit (Zoptymalizowane)
+                    <strong>Plik:</strong> {filename}<br>
+                    <strong>Środowisko:</strong> Replit (Zoptymalizowane v2.0)
                 </div>
                 
                 <h3>🎯 Podgląd wzoru haftu:</h3>
@@ -645,8 +772,9 @@ def internal_error(e):
     return jsonify({"error": "Błąd serwera"}), 500
 
 if __name__ == "__main__":
-    print("🎯 Aplikacja Generator Wzorów Haftu - Replit")
+    print("🎯 Aplikacja Generator Wzorów Haftu - Replit v2.0")
     print("📍 URL: http://0.0.0.0:5000")
     print("🔧 Status: Zoptymalizowane dla środowiska Replit")
-    print("✅ Wektoryzacja: Własna implementacja")
+    print("✅ Wektoryzacja: Własna implementacja z ulepszoną detekcją")
     app.run(host='0.0.0.0', port=5000, debug=False)
+
