@@ -1,0 +1,25 @@
+modules = ["python-3.12", "nodejs-20", "web", "bash"]
+run = "python app.py"
+
+[nix]
+channel = "stable-24_05"
+packages = ["freetype", "glibcLocales", "gobject-introspection", "gtk3", "lcms2", "libGL", "libGLU", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "pkg-config", "tcl", "tk", "xsimd", "zlib"]
+
+[deployment]
+run = ["sh", "-c", "python app.py"]
+
+[workflows]
+runButton = "Run"
+
+[[workflows.workflow]]
+name = "Run"
+author = 44847630
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python app.py"
+
+[[ports]]
+localPort = 5000
+externalPort = 80

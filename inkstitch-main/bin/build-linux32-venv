@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -e
+uname -a
+python3 --version
+python3 -m pip --version
+python3 -m pip debug
+
+python3 -m venv virtualenv
+source virtualenv/bin/activate
+          
+virtualenv/bin/pip debug
+virtualenv/bin/pip install pycairo
+virtualenv/bin/pip install PyGObject==3.50.0
+
+virtualenv/bin/pip install wxPython
+# install geos for shapely
+virtualenv/bin/pip install -v shapely
+
+virtualenv/bin/pip install -r requirements.txt
+
+# for networkx
+virtualenv/bin/pip install pandas
+
+virtualenv/bin/pip install pyinstaller
+
+deactivate

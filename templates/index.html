@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload pliku do haftu</title>
+</head>
+<body>
+    <h1>Prześlij plik graficzny do konwersji na haft</h1>
+    <form action="/upload" method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".jpg,.jpeg,.png,.svg,.webp" required>
+        <button type="submit">Wyślij</button>
+    </form>
+</body>
+</html>
