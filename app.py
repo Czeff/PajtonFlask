@@ -37,39 +37,39 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def optimize_image_for_vectorization(image_path, max_size=MAX_IMAGE_SIZE):
-    """Optymalizuje obraz do wektoryzacji z zachowaniem jakości i ciągłości"""
+    """Optymalizuje obraz do wektoryzacji cartoon-style z zachowaniem ostrych krawędzi"""
     try:
         with Image.open(image_path) as img:
             # Konwersja do RGB
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            # Zachowaj proporcje przy skalowaniu - użyj większego rozmiaru
-            target_size = min(max_size * 1.2, 1000)  # Zwiększ rozmiar docelowy
+            # Zachowaj proporcje przy skalowaniu - większy rozmiar dla cartoon
+            target_size = min(max_size * 1.5, 1200)  # Jeszcze większy rozmiar
             img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
             
-            # Bardzo delikatne wygładzenie - mniej agresywne
-            img = img.filter(ImageFilter.GaussianBlur(radius=0.1))
+            # Minimalne wygładzenie - zachowaj ostre krawędzie cartoon
+            img = img.filter(ImageFilter.GaussianBlur(radius=0.05))
             
-            # Delikatne zwiększenie kontrastu
+            # Zwiększ kontrast dla lepszego rozdzielenia kolorów
             enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.15)
+            img = enhancer.enhance(1.25)
             
-            # Delikatne zwiększenie nasycenia
+            # Zwiększ nasycenie dla lepszego rozpoznawania kolorów
             enhancer = ImageEnhance.Color(img)
-            img = enhancer.enhance(1.1)
+            img = enhancer.enhance(1.2)
             
-            # Zwiększ ostrość dla lepszych krawędzi
+            # Zwiększ ostrość dla lepszych krawędzi cartoon
             enhancer = ImageEnhance.Sharpness(img)
-            img = enhancer.enhance(1.1)
+            img = enhancer.enhance(1.3)
             
             return img
     except Exception as e:
         print(f"Błąd podczas optymalizacji obrazu: {e}")
         return None
 
-def extract_dominant_colors_advanced(image, max_colors=12):
-    """Zaawansowane wyciąganie kolorów dominujących z większą precyzją"""
+def extract_dominant_colors_advanced(image, max_colors=16):
+    """Zaawansowane wyciąganie kolorów dominujących z większą precyzją dla cartoon-style"""
     try:
         # Konwertuj do numpy array
         img_array = np.array(image)
@@ -80,9 +80,9 @@ def extract_dominant_colors_advanced(image, max_colors=12):
         # Reshape do 2D array
         pixels = img_array.reshape(-1, 3)
         
-        # Próbkowanie pikseli - weź co 10 piksel dla lepszej wydajności
-        if len(pixels) > 50000:
-            step = len(pixels) // 20000
+        # Lepsze próbkowanie - weź więcej pikseli dla cartoon-style
+        if len(pixels) > 100000:
+            step = len(pixels) // 50000
             pixels = pixels[::step]
         
         # Usuń duplikaty kolorów
@@ -93,22 +93,22 @@ def extract_dominant_colors_advanced(image, max_colors=12):
             print(f"Za mało unikalnych kolorów ({len(unique_pixels)}), używam prostszej metody")
             return extract_dominant_colors_simple(image, max_colors)
         
-        # K-means clustering
+        # K-means clustering z lepszymi parametrami
         n_clusters = min(max_colors, len(unique_pixels))
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10, max_iter=300)
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=15, max_iter=500)
         kmeans.fit(unique_pixels)
         
         # Zwróć kolory jako tuple
         colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
         
-        # Filtruj kolory zbyt podobne do siebie
+        # Zmniejszona tolerancja dla lepszego rozróżniania kolorów cartoon
         filtered_colors = []
         for color in colors:
             is_unique = True
             for existing in filtered_colors:
-                # Zwiększona tolerancja dla różnych kolorów
+                # Zmniejszona tolerancja dla cartoon-style
                 color_diff = np.sqrt(sum((color[i] - existing[i])**2 for i in range(3)))
-                if color_diff < 30:
+                if color_diff < 25:
                     is_unique = False
                     break
             if is_unique:
@@ -154,7 +154,7 @@ def extract_dominant_colors_simple(image, max_colors=8):
         return [(0, 0, 0), (128, 128, 128), (255, 255, 255)]
 
 def create_color_regions_advanced(image, colors):
-    """Zaawansowane tworzenie regionów kolorów z lepszą ciągłością"""
+    """Zaawansowane tworzenie regionów kolorów z lepszą ciągłością dla cartoon-style"""
     try:
         width, height = image.size
         img_array = np.array(image)
@@ -164,21 +164,25 @@ def create_color_regions_advanced(image, colors):
         for color in colors:
             print(f"Przetwarzanie koloru: {color}")
             
-            # Utwórz maskę dla podobnych kolorów - zwiększona tolerancja
+            # Utwórz maskę dla podobnych kolorów - precyzyjniejsza dla cartoon
             mask = np.zeros((height, width), dtype=bool)
             
-            # Oblicz odległość kolorów w RGB - zwiększona tolerancja
+            # Oblicz odległość kolorów w RGB - precyzyjniejsza dla cartoon
             color_array = np.array(color)
             diff = np.sqrt(np.sum((img_array - color_array)**2, axis=2))
             
-            # Adaptacyjny próg w zależności od koloru
+            # Bardziej precyzyjny próg dla cartoon-style
             brightness = np.mean(color)
-            if brightness < 50:  # Ciemne kolory
+            if brightness < 30:  # Bardzo ciemne kolory
+                threshold = 35
+            elif brightness < 80:  # Ciemne kolory
+                threshold = 45
+            elif brightness > 220:  # Bardzo jasne kolory  
                 threshold = 60
-            elif brightness > 200:  # Jasne kolory  
-                threshold = 80
-            else:  # Średnie kolory
+            elif brightness > 180:  # Jasne kolory
                 threshold = 50
+            else:  # Średnie kolory
+                threshold = 40
             
             mask = diff <= threshold
             
@@ -261,11 +265,11 @@ def create_color_regions_simple(image, colors):
         return []
 
 def trace_contours_advanced(mask):
-    """Zaawansowane śledzenie konturów z gładszymi kształtami"""
+    """Zaawansowane śledzenie konturów z ostrymi kształtami dla cartoon-style"""
     try:
-        # Wygładź maskę przed śledzeniem konturów
+        # Delikatne wygładzenie maski - mniej dla cartoon-style
         from scipy import ndimage
-        smoothed_mask = ndimage.gaussian_filter(mask.astype(float), sigma=1.0) > 0.5
+        smoothed_mask = ndimage.gaussian_filter(mask.astype(float), sigma=0.5) > 0.5
         
         try:
             # Próba z OpenCV jeśli dostępne
@@ -273,39 +277,39 @@ def trace_contours_advanced(mask):
                 raise ImportError("OpenCV not available")
             mask_uint8 = (smoothed_mask * 255).astype(np.uint8)
             
-            # Użyj różnych metod w zależności od rozmiaru maski
-            if np.sum(smoothed_mask) > 1000:
-                contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_L1)
+            # Użyj precyzyjniejszej metody dla cartoon-style
+            if np.sum(smoothed_mask) > 500:
+                contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
             else:
-                contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+                contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
             processed_contours = []
             for contour in contours:
-                if len(contour) >= 6:  # Większy minimalny próg
-                    # Wygładź kontur
-                    contour = cv2.approxPolyDP(contour, 1.0, True)
-                    
-                    # Adaptacyjne upraszczanie w zależności od rozmiaru
+                if len(contour) >= 4:  # Zmniejszony próg
+                    # Precyzyjniejsze upraszczanie dla cartoon-style
                     perimeter = cv2.arcLength(contour, True)
-                    if perimeter > 200:
-                        epsilon = 0.008 * perimeter  # Mniejszy epsilon dla większych konturów
+                    if perimeter > 300:
+                        epsilon = 0.005 * perimeter  # Jeszcze mniejszy epsilon
+                    elif perimeter > 100:
+                        epsilon = 0.008 * perimeter
                     else:
-                        epsilon = 0.015 * perimeter
+                        epsilon = 0.012 * perimeter
                     
                     simplified = cv2.approxPolyDP(contour, epsilon, True)
                     
-                    if len(simplified) >= 4:  # Minimum 4 punkty dla zamkniętego kształtu
+                    if len(simplified) >= 3:  # Minimum 3 punkty
                         points = [(int(point[0][0]), int(point[0][1])) for point in simplified]
                         
-                        # Dodatkowo wygładź punkty przy użyciu średniej ruchomej
-                        if len(points) > 6:
+                        # Mniej agresywne wygładzanie dla cartoon-style
+                        if len(points) > 8:
                             smoothed_points = []
                             for i in range(len(points)):
                                 prev_idx = (i - 1) % len(points)
                                 next_idx = (i + 1) % len(points)
                                 
-                                smooth_x = (points[prev_idx][0] + 2*points[i][0] + points[next_idx][0]) // 4
-                                smooth_y = (points[prev_idx][1] + 2*points[i][1] + points[next_idx][1]) // 4
+                                # Mniej agresywne wygładzanie
+                                smooth_x = (points[prev_idx][0] + 3*points[i][0] + points[next_idx][0]) // 5
+                                smooth_y = (points[prev_idx][1] + 3*points[i][1] + points[next_idx][1]) // 5
                                 
                                 smoothed_points.append((smooth_x, smooth_y))
                             points = smoothed_points
@@ -378,41 +382,51 @@ def trace_contours_simple(mask):
         return []
 
 def create_smooth_svg_path(contour):
-    """Tworzy wysokiej jakości ścieżkę SVG z krzywymi Beziera"""
+    """Tworzy wysokiej jakości ścieżkę SVG z balansem między gładkością a ostrością dla cartoon-style"""
     if len(contour) < 3:
         return None
     
     try:
-        # Nie upraszczaj zbyt agresywnie - zachowaj więcej punktów
-        if len(contour) > 50:
-            # Tylko dla bardzo dużych konturów
-            step = len(contour) // 40
+        # Zachowaj więcej punktów dla cartoon-style
+        if len(contour) > 80:
+            # Mniej agresywne upraszczanie
+            step = len(contour) // 60
             simplified_contour = contour[::max(1, step)]
         else:
             simplified_contour = contour
         
-        if len(simplified_contour) < 4:
+        if len(simplified_contour) < 3:
             simplified_contour = contour
         
         # Rozpocznij ścieżkę
         path_data = f"M {simplified_contour[0][0]:.1f} {simplified_contour[0][1]:.1f}"
         
-        # Generuj krzywe Beziera dla gładszych kształtów
-        if len(simplified_contour) >= 6:
+        # Mieszane podejście - krzywe dla większych obszarów, linie dla ostrych krawędzi
+        if len(simplified_contour) >= 8:
             i = 1
             while i < len(simplified_contour):
                 if i + 2 < len(simplified_contour):
-                    # Utwórz krzywą kwadratową Beziera
-                    p1 = simplified_contour[i]
-                    p2 = simplified_contour[i + 1]
-                    p3 = simplified_contour[i + 2] if i + 2 < len(simplified_contour) else simplified_contour[0]
+                    p1 = simplified_contour[i - 1] if i > 0 else simplified_contour[-1]
+                    p2 = simplified_contour[i]
+                    p3 = simplified_contour[i + 1]
+                    p4 = simplified_contour[i + 2] if i + 2 < len(simplified_contour) else simplified_contour[0]
                     
-                    # Punkty kontrolne dla płynnej krzywej
-                    cp_x = p2[0]
-                    cp_y = p2[1]
+                    # Sprawdź czy to ostra krawędź
+                    angle1 = np.arctan2(p2[1] - p1[1], p2[0] - p1[0])
+                    angle2 = np.arctan2(p3[1] - p2[1], p3[0] - p2[0])
+                    angle_diff = abs(angle2 - angle1)
                     
-                    path_data += f" Q {cp_x:.1f} {cp_y:.1f} {p3[0]:.1f} {p3[1]:.1f}"
-                    i += 2
+                    if angle_diff > np.pi / 3:  # Ostra krawędź
+                        # Użyj linii prostych
+                        path_data += f" L {p2[0]:.1f} {p2[1]:.1f}"
+                        path_data += f" L {p3[0]:.1f} {p3[1]:.1f}"
+                        i += 2
+                    else:
+                        # Użyj krzywej
+                        cp_x = p2[0] + (p3[0] - p1[0]) * 0.1
+                        cp_y = p2[1] + (p3[1] - p1[1]) * 0.1
+                        path_data += f" Q {cp_x:.1f} {cp_y:.1f} {p3[0]:.1f} {p3[1]:.1f}"
+                        i += 2
                 else:
                     # Linia prosta dla pozostałych punktów
                     current = simplified_contour[i]
@@ -446,20 +460,20 @@ def create_simple_svg_path(contour):
     return path_data
 
 def vectorize_image_improved(image_path, output_path):
-    """Ulepszona wektoryzacja obrazu z wysoką jakością"""
+    """Ulepszona wektoryzacja obrazu z wysoką jakością dla cartoon-style"""
     try:
-        print("🎨 Rozpoczynanie ulepszonej wektoryzacji...")
+        print("🎨 Rozpoczynanie ulepszonej wektoryzacji cartoon-style...")
         
         # Optymalizuj obraz
-        optimized_image = optimize_image_for_vectorization(image_path)
+        optimized_image = optimize_image_for_vectorization(image_path, max_size=1000)
         if not optimized_image:
             print("❌ Błąd optymalizacji obrazu")
             return False
         
         print(f"✅ Obraz zoptymalizowany do rozmiaru: {optimized_image.size}")
         
-        # Wyciągnij dominujące kolory - więcej kolorów dla lepszej dokładności
-        colors = extract_dominant_colors_advanced(optimized_image, max_colors=12)
+        # Wyciągnij dominujące kolory - więcej kolorów dla lepszej dokładności cartoon
+        colors = extract_dominant_colors_advanced(optimized_image, max_colors=16)
         print(f"🎨 Znaleziono {len(colors)} kolorów dominujących")
         
         if not colors:
@@ -513,7 +527,7 @@ def vectorize_image_improved(image_path, output_path):
             print("⚠️ Wygenerowany plik SVG może być za mały")
             return False
         
-        print(f"✅ Wektoryzacja zakończona! Rozmiar pliku: {file_size} bajtów")
+        print(f"✅ Wektoryzacja cartoon-style zakończona! Rozmiar pliku: {file_size} bajtów")
         return True
         
     except Exception as e:
