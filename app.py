@@ -28,7 +28,7 @@ for d in (RASTER_FOLDER, VECTOR_AUTO, VECTOR_MANUAL, PREVIEW_FOLDER):
 
 HOOP_W_MM, HOOP_H_MM = 100, 100
 DPI = 300
-MAX_IMAGE_SIZE = 800  # Zoptymalizowany rozmiar dla lepszej wydajności
+MAX_IMAGE_SIZE = 400  # Znacznie zmniejszony rozmiar dla oszczędności zasobów
 
 # Registracja namespace'ów XML
 ET.register_namespace('', "http://www.w3.org/2000/svg")
@@ -64,8 +64,8 @@ def optimize_image(image_path, max_size=MAX_IMAGE_SIZE):
                 img = img.resize(new_size, Image.Resampling.LANCZOS)
                 logger.info(f"Zmniejszono obraz do {new_size}")
 
-            # Zapisz zoptymalizowany obraz z wyższą jakością
-            img.save(image_path, 'JPEG', quality=95, optimize=True)
+            # Zapisz zoptymalizowany obraz z umiarkowaną jakością
+            img.save(image_path, 'JPEG', quality=85, optimize=True)
             return True
     except Exception as e:
         logger.error(f"Błąd optymalizacji obrazu: {e}")
@@ -79,9 +79,9 @@ def create_vector_svg_from_image(image_path, svg_path):
             if img.mode != 'RGB':
                 img = img.convert('RGB')
 
-            # Zwiększ rozmiar analizy dla lepszych szczegółów
+            # Zmniejszony rozmiar analizy dla oszczędności zasobów
             original_size = img.size
-            max_analysis_size = 600  # Zwiększony rozmiar dla lepszych konturów
+            max_analysis_size = 300  # Zmniejszony rozmiar dla lepszej wydajności
             if max(original_size) > max_analysis_size:
                 ratio = max_analysis_size / max(original_size)
                 new_size = (int(original_size[0] * ratio), int(original_size[1] * ratio))
@@ -98,21 +98,21 @@ def create_vector_svg_from_image(image_path, svg_path):
             from collections import Counter
             color_counts = Counter(original_pixels)
             
-            # Wybierz najczęstsze kolory (maksymalnie 16)
-            dominant_colors = [color for color, count in color_counts.most_common(16) if count > (width * height) // 200]
+            # Wybierz najczęstsze kolory (maksymalnie 8 dla oszczędności)
+            dominant_colors = [color for color, count in color_counts.most_common(8) if count > (width * height) // 100]
             
-            # Jeśli za mało dominujących kolorów, użyj próbkowania
-            if len(dominant_colors) < 8:
+            # Jeśli za mało dominujących kolorów, użyj próbkowania (zoptymalizowane)
+            if len(dominant_colors) < 4:
                 sample_colors = []
-                step = max(1, len(original_pixels) // 100)
+                step = max(1, len(original_pixels) // 50)  # Większy krok = mniej próbek
                 for i in range(0, len(original_pixels), step):
                     sample_colors.append(original_pixels[i])
                 
-                # Klasteryzacja kolorów
+                # Klasteryzacja kolorów (zmniejszona liczba)
                 unique_colors = list(set(sample_colors))
-                if len(unique_colors) > 16:
+                if len(unique_colors) > 8:
                     # Prosta klasteryzacja kolorów
-                    clustered_colors = cluster_colors(unique_colors, 12)
+                    clustered_colors = cluster_colors(unique_colors, 6)
                     dominant_colors = clustered_colors
                 else:
                     dominant_colors = unique_colors
@@ -134,9 +134,9 @@ def create_vector_svg_from_image(image_path, svg_path):
             # Dodatkowe filtry dla lepszej detekcji
             contour_img = img_analysis.filter(ImageFilter.CONTOUR)
             
-            # SVG wymiary - wyższa rozdzielczość
-            svg_width = 1000  # Zwiększone dla lepszych ścieżek
-            svg_height = int(1000 * height / width) if width > 0 else 800
+            # SVG wymiary - zoptymalizowane dla wydajności
+            svg_width = 500  # Zmniejszone dla oszczędności zasobów
+            svg_height = int(500 * height / width) if width > 0 else 400
 
             svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
@@ -156,7 +156,7 @@ def create_vector_svg_from_image(image_path, svg_path):
             path_count = 0
 
             # Ulepszona funkcja do grupowania pikseli według kolorów
-            def group_pixels_by_color(pixels, colors, tolerance=30):
+            def group_pixels_by_color(pixels, colors, tolerance=50):
                 """Grupuj piksele według podobnych kolorów"""
                 color_groups = {i: [] for i in range(len(colors))}
                 
@@ -215,7 +215,7 @@ def create_vector_svg_from_image(image_path, svg_path):
                             if (nx, ny) in pixel_positions and (nx, ny) not in visited:
                                 stack.append((nx, ny))
                     
-                    if len(region) > 5:  # Minimum region size
+                    if len(region) > 20:  # Zwiększony minimalny rozmiar regionu
                         regions.append(region)
                 
                 return regions
@@ -284,7 +284,7 @@ def create_vector_svg_from_image(image_path, svg_path):
                 
                 return ordered
 
-            def simplify_contour_advanced(contour, tolerance=1.5):
+            def simplify_contour_advanced(contour, tolerance=3.0):
                 """Zaawansowane uproszczenie konturu"""
                 if len(contour) <= 3:
                     return contour
@@ -432,7 +432,13 @@ def create_vector_svg_from_image(image_path, svg_path):
             with open(svg_path, 'w', encoding='utf-8') as f:
                 f.write(svg_content)
 
-            logger.info(f"Utworzono wysokiej jakości wektoryzację z {path_count} regionami kolorów: {svg_path}")
+            logger.info(f"Utworzono zoptymalizowaną wektoryzację z {path_count} regionami kolorów: {svg_path}")
+            
+            # Czyszczenie pamięci
+            del original_pixels, img_analysis, dominant_colors
+            import gc
+            gc.collect()
+            
             return True
 
     except Exception as e:
@@ -1140,8 +1146,9 @@ def internal_error(e):
     return jsonify({"error": "Błąd serwera"}), 500
 
 if __name__ == "__main__":
-    print("🎯 Aplikacja Generator Wzorów Haftu - Replit v2.0")
+    print("🎯 Aplikacja Generator Wzorów Haftu - Replit v2.0 (Eco)")
     print("📍 URL: http://0.0.0.0:5000")
-    print("🔧 Status: Zoptymalizowane dla środowiska Replit")
-    print("✅ Wektoryzacja: Własna implementacja z ulepszoną detekcją")
+    print("🔧 Status: Zoptymalizowane dla Intel i3 (Oszczędność zasobów)")
+    print("✅ Wektoryzacja: Własna implementacja z optymalizacją CPU/RAM")
+    print("⚡ Tryb ECO: Zmniejszone zużycie CPU i RAM dla słabszych procesorów")
     app.run(host='0.0.0.0', port=5000, debug=False)
