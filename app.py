@@ -68,57 +68,125 @@ def optimize_image(image_path, max_size=MAX_IMAGE_SIZE):
         return False
 
 def create_vector_svg_from_image(image_path, svg_path):
-    """Tworzy prosty SVG z prostokątami kolorów z obrazu - uproszczona wektoryzacja"""
+    """Tworzy SVG z lepszą analizą obrazu i grupowaniem kolorów"""
     try:
         with Image.open(image_path) as img:
-            # Zmniejsz obraz dla szybszej analizy
-            img = img.resize((50, 50), Image.Resampling.LANCZOS)
-            width, height = img.size
+            # Zwiększ rozdzielczość analizy
+            original_size = img.size
+            analysis_size = (min(200, original_size[0]), min(200, original_size[1]))
+            img_analysis = img.resize(analysis_size, Image.Resampling.LANCZOS)
             
-            # Pobierz kolory pikseli
-            pixels = list(img.getdata())
+            width, height = img_analysis.size
+            pixels = list(img_analysis.getdata())
             
-            # SVG header
+            # Funkcja do grupowania podobnych kolorów
+            def color_distance(c1, c2):
+                if isinstance(c1, int):
+                    c1 = (c1, c1, c1)
+                if isinstance(c2, int):
+                    c2 = (c2, c2, c2)
+                return sum((a - b) ** 2 for a, b in zip(c1[:3], c2[:3])) ** 0.5
+            
+            # Znajdź dominujące kolory
+            color_groups = {}
+            tolerance = 30
+            
+            for pixel in pixels:
+                if isinstance(pixel, int):
+                    pixel = (pixel, pixel, pixel)
+                
+                # Sprawdź czy kolor pasuje do istniejącej grupy
+                matched = False
+                for group_color in color_groups:
+                    if color_distance(pixel, group_color) < tolerance:
+                        color_groups[group_color].append(pixel)
+                        matched = True
+                        break
+                
+                if not matched:
+                    color_groups[pixel[:3]] = [pixel]
+            
+            # Wybierz najważniejsze kolory (maksymalnie 8)
+            sorted_colors = sorted(color_groups.items(), key=lambda x: len(x[1]), reverse=True)[:8]
+            
+            # SVG header z większą dokładnością
+            svg_width = 400
+            svg_height = int(400 * height / width)
+            
             svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
-     width="{width * 10}" height="{height * 10}" viewBox="0 0 {width * 10} {height * 10}">
+     width="{svg_width}" height="{svg_height}" viewBox="0 0 {svg_width} {svg_height}">
   <title>Embroidery Pattern</title>
   <g id="embroidery-paths">'''
             
-            # Grupuj podobne kolory i twórz prostokąty
-            processed = set()
-            for y in range(height):
-                for x in range(width):
-                    if (x, y) in processed:
-                        continue
+            # Twórz ścieżki dla każdego koloru
+            scale_x = svg_width / width
+            scale_y = svg_height / height
+            
+            for color_group, pixel_list in sorted_colors:
+                if len(pixel_list) < 5:  # Ignoruj bardzo małe grupy
+                    continue
                     
-                    pixel_idx = y * width + x
-                    if pixel_idx >= len(pixels):
-                        continue
+                rgb = f"rgb({color_group[0]},{color_group[1]},{color_group[2]})"
+                
+                # Znajdź wszystkie piksele tego koloru
+                color_pixels = []
+                for y in range(height):
+                    for x in range(width):
+                        pixel_idx = y * width + x
+                        if pixel_idx < len(pixels):
+                            pixel = pixels[pixel_idx]
+                            if isinstance(pixel, int):
+                                pixel = (pixel, pixel, pixel)
+                            
+                            if color_distance(pixel, color_group) < tolerance:
+                                color_pixels.append((x, y))
+                
+                # Grupuj sąsiadujące piksele w prostokąty
+                if color_pixels:
+                    # Prosta segmentacja - twórz prostokąty dla grup pikseli
+                    processed_pixels = set()
+                    
+                    for px, py in color_pixels:
+                        if (px, py) in processed_pixels:
+                            continue
                         
-                    color = pixels[pixel_idx]
-                    if isinstance(color, int):
-                        rgb = f"rgb({color},{color},{color})"
-                    else:
-                        rgb = f"rgb({color[0]},{color[1]},{color[2]})"
-                    
-                    # Znajdź region podobnego koloru
-                    region_width = 1
-                    region_height = 1
-                    
-                    # Twórz ścieżkę prostokąta
-                    rect_x = x * 10
-                    rect_y = y * 10
-                    rect_w = region_width * 10
-                    rect_h = region_height * 10
-                    
-                    # Dodaj ścieżkę zamiast prostokąta
-                    path_data = f"M {rect_x},{rect_y} L {rect_x + rect_w},{rect_y} L {rect_x + rect_w},{rect_y + rect_h} L {rect_x},{rect_y + rect_h} Z"
-                    
-                    svg_content += f'''
-    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.5"/>'''
-                    
-                    processed.add((x, y))
+                        # Znajdź prostokąt zaczynający się od tego piksela
+                        min_x, max_x = px, px
+                        min_y, max_y = py, py
+                        
+                        # Rozszerz prostokąt w prawo
+                        while max_x + 1 < width and (max_x + 1, py) in color_pixels:
+                            max_x += 1
+                        
+                        # Rozszerz prostokąt w dół
+                        while max_y + 1 < height:
+                            can_extend = True
+                            for x in range(min_x, max_x + 1):
+                                if (x, max_y + 1) not in color_pixels:
+                                    can_extend = False
+                                    break
+                            if can_extend:
+                                max_y += 1
+                            else:
+                                break
+                        
+                        # Dodaj prostokąt do SVG
+                        rect_x = min_x * scale_x
+                        rect_y = min_y * scale_y
+                        rect_w = (max_x - min_x + 1) * scale_x
+                        rect_h = (max_y - min_y + 1) * scale_y
+                        
+                        # Dodaj jako ścieżkę
+                        path_data = f"M {rect_x:.1f},{rect_y:.1f} L {rect_x + rect_w:.1f},{rect_y:.1f} L {rect_x + rect_w:.1f},{rect_y + rect_h:.1f} L {rect_x:.1f},{rect_y + rect_h:.1f} Z"
+                        
+                        svg_content += f'''
+    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.2"/>'''
+                        
+                        # Oznacz przetworzone piksele
+                        for y in range(min_y, max_y + 1):
+                            for x in range(min_x, max_x + 1):
+                                processed_pixels.add((x, y))
             
             svg_content += '''
   </g>
@@ -128,7 +196,7 @@ def create_vector_svg_from_image(image_path, svg_path):
             with open(svg_path, 'w', encoding='utf-8') as f:
                 f.write(svg_content)
                 
-            logger.info(f"Utworzono wektorowy SVG: {svg_path}")
+            logger.info(f"Utworzono ulepszoną wektoryzację SVG: {svg_path}")
             return True
             
     except Exception as e:
@@ -267,11 +335,11 @@ def inject_inkstitch_params(svg_path):
         logger.warning(f"Nie można dodać parametrów InkStitch: {e}")
 
 def create_preview_from_svg(svg_path, png_path):
-    """Tworzy podgląd PNG z SVG"""
+    """Tworzy podgląd PNG z SVG z wizualną reprezentacją ścieżek"""
     try:
         os.makedirs(os.path.dirname(png_path), exist_ok=True)
         
-        # Odczytaj SVG i spróbuj wydobyć informacje o kolorach
+        # Odczytaj SVG
         tree = ET.parse(svg_path)
         root = tree.getroot()
         
@@ -292,34 +360,84 @@ def create_preview_from_svg(svg_path, png_path):
         img = Image.new('RGB', (width, height), 'white')
         draw = ImageDraw.Draw(img)
         
-        # Dodaj tytuł
-        try:
-            font = ImageFont.load_default()
-        except:
-            font = None
-            
-        title = "Embroidery Preview"
-        if font:
-            bbox = draw.textbbox((0, 0), title, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            x = (width - text_width) // 2
-            y = 20
-            draw.text((x, y), title, fill='black', font=font)
-        
-        # Dodaj reprezentację wzoru haftu
+        # Spróbuj parsować i rysować rzeczywiste ścieżki z SVG
         paths = root.findall('.//{http://www.w3.org/2000/svg}path')
         if paths:
-            # Rysuj linie reprezentujące ściegi
-            for i, path in enumerate(paths[:10]):  # Maksymalnie 10 ścieżek
-                color = (50 + i * 20, 100 + i * 15, 200 - i * 10)
-                y_pos = 60 + i * 20
-                draw.line([(50, y_pos), (width - 50, y_pos)], fill=color, width=3)
-                draw.line([(60, y_pos - 5), (70, y_pos + 5)], fill=color, width=2)
-                draw.line([(80, y_pos + 5), (90, y_pos - 5)], fill=color, width=2)
+            for path_elem in paths:
+                fill_color = path_elem.get('fill', 'black')
+                
+                # Parsuj kolor
+                try:
+                    if fill_color.startswith('rgb('):
+                        # Wyciągnij wartości RGB
+                        rgb_values = fill_color[4:-1].split(',')
+                        color = tuple(int(v.strip()) for v in rgb_values)
+                    elif fill_color.startswith('#'):
+                        # Hex color
+                        hex_color = fill_color[1:]
+                        if len(hex_color) == 6:
+                            color = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                        else:
+                            color = (100, 100, 100)
+                    else:
+                        color = (100, 100, 100)
+                except:
+                    color = (100, 100, 100)
+                
+                # Parsuj prostą ścieżkę (prostokąty)
+                path_data = path_elem.get('d', '')
+                if path_data.startswith('M ') and 'L ' in path_data and ' Z' in path_data:
+                    try:
+                        # Parsuj współrzędne prostokąta
+                        parts = path_data.replace('M ', '').replace(' L ', ',').replace(' Z', '').split(',')
+                        if len(parts) >= 8:
+                            coords = [float(p.strip()) for p in parts[:8]]
+                            
+                            # Skaluj współrzędne do rozmiaru podglądu
+                            scale_x = width / vw if viewbox else 1
+                            scale_y = height / vh if viewbox else 1
+                            
+                            scaled_coords = []
+                            for i in range(0, len(coords), 2):
+                                x = coords[i] * scale_x
+                                y = coords[i+1] * scale_y
+                                scaled_coords.extend([x, y])
+                            
+                            # Rysuj prostokąt
+                            if len(scaled_coords) >= 8:
+                                x1, y1 = scaled_coords[0], scaled_coords[1]
+                                x2, y2 = scaled_coords[4], scaled_coords[5]
+                                
+                                # Upewnij się, że współrzędne są w poprawnej kolejności
+                                left = min(x1, x2)
+                                top = min(y1, y2)
+                                right = max(x1, x2)
+                                bottom = max(y1, y2)
+                                
+                                # Rysuj wypełniony prostokąt
+                                if right > left and bottom > top:
+                                    draw.rectangle([left, top, right, bottom], fill=color, outline=color)
+                    except:
+                        pass
         
-        # Dodaj ramkę
-        draw.rectangle([10, 10, width - 10, height - 10], outline='gray', width=2)
+        # Jeśli nie udało się narysować ścieżek, użyj reprezentacji zastępczej
+        if not paths or all(not path_elem.get('d') for path_elem in paths):
+            try:
+                font = ImageFont.load_default()
+            except:
+                font = None
+                
+            title = "Podgląd wzoru haftu"
+            if font:
+                bbox = draw.textbbox((0, 0), title, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                x = (width - text_width) // 2
+                y = (height - text_height) // 2
+                draw.text((x, y), title, fill='black', font=font)
+        
+        # Dodaj subtelną ramkę
+        draw.rectangle([0, 0, width-1, height-1], outline='gray', width=1)
         
         img.save(png_path)
         logger.info(f"Utworzono podgląd: {png_path}")
