@@ -9,7 +9,6 @@ import json
 import io
 import traceback
 import gc
-import numpy as np
 from collections import defaultdict
 
 app = Flask(__name__)
@@ -56,9 +55,6 @@ def optimize_image_for_vectorization(image_path, max_size=MAX_IMAGE_SIZE):
 def quantize_colors_aggressive(image, max_colors=4):
     """Agresywna kwantyzacja kolorów do maksymalnie 4 kolorów"""
     try:
-        # Konwertuj do numpy array dla szybszej obróbki
-        img_array = np.array(image)
-        
         # Użyj PIL do kwantyzacji z methodą MAXCOVERAGE
         quantized = image.quantize(colors=max_colors, method=Image.Quantize.MAXCOVERAGE)
         
@@ -91,11 +87,8 @@ def create_simple_path_from_edges(edges_image, simplification_factor=5):
         width, height = edges_image.size
         paths = []
         
-        # Konwertuj obraz do numpy array dla szybszej obróbki
-        edges_array = np.array(edges_image)
-        
         # Znajdź kontury przy pomocy prostego algorytmu
-        contours = find_simple_contours(edges_array, simplification_factor)
+        contours = find_simple_contours(edges_image, simplification_factor)
         
         for contour in contours:
             if len(contour) > 3:  # Tylko kontury z więcej niż 3 punktami
@@ -108,28 +101,31 @@ def create_simple_path_from_edges(edges_image, simplification_factor=5):
         print(f"Błąd podczas tworzenia ścieżek: {e}")
         return []
 
-def find_simple_contours(edges_array, simplification_factor=5):
+def find_simple_contours(edges_image, simplification_factor=5):
     """Znajdowanie konturów z uproszczonym algorytmem"""
-    height, width = edges_array.shape
+    width, height = edges_image.size
     contours = []
-    visited = np.zeros_like(edges_array, dtype=bool)
+    visited = [[False for _ in range(width)] for _ in range(height)]
+    
+    # Konwertuj obraz do listy pikseli dla prostszej obróbki
+    pixels = list(edges_image.getdata())
     
     # Skanuj obraz w większych krokach dla lepszej wydajności
     step = max(2, simplification_factor // 2)
     
     for y in range(0, height, step):
         for x in range(0, width, step):
-            if edges_array[y, x] > 128 and not visited[y, x]:
+            pixel_index = y * width + x
+            if pixel_index < len(pixels) and pixels[pixel_index] > 128 and not visited[y][x]:
                 # Znajdź kontur zaczynając od tego punktu
-                contour = trace_contour_simple(edges_array, visited, x, y, simplification_factor)
+                contour = trace_contour_simple(pixels, visited, x, y, width, height, simplification_factor)
                 if len(contour) > 5:  # Tylko znaczące kontury
                     contours.append(contour)
     
     return contours
 
-def trace_contour_simple(edges_array, visited, start_x, start_y, max_points=20):
+def trace_contour_simple(pixels, visited, start_x, start_y, width, height, max_points=20):
     """Uproszczone śledzenie konturu"""
-    height, width = edges_array.shape
     contour = []
     
     # Kierunki: prawo, dół, lewo, góra
@@ -140,9 +136,10 @@ def trace_contour_simple(edges_array, visited, start_x, start_y, max_points=20):
     
     for _ in range(max_points):
         if 0 <= y < height and 0 <= x < width:
-            if edges_array[y, x] > 128 and not visited[y, x]:
+            pixel_index = y * width + x
+            if pixel_index < len(pixels) and pixels[pixel_index] > 128 and not visited[y][x]:
                 contour.append((x, y))
-                visited[y, x] = True
+                visited[y][x] = True
                 
                 # Spróbuj znaleźć następny punkt
                 found_next = False
@@ -150,12 +147,14 @@ def trace_contour_simple(edges_array, visited, start_x, start_y, max_points=20):
                     dx, dy = directions[(direction + i) % 4]
                     nx, ny = x + dx * 2, y + dy * 2  # Większe kroki
                     
-                    if (0 <= ny < height and 0 <= nx < width and 
-                        edges_array[ny, nx] > 128 and not visited[ny, nx]):
-                        x, y = nx, ny
-                        direction = (direction + i) % 4
-                        found_next = True
-                        break
+                    if (0 <= ny < height and 0 <= nx < width):
+                        next_pixel_index = ny * width + nx
+                        if (next_pixel_index < len(pixels) and 
+                            pixels[next_pixel_index] > 128 and not visited[ny][nx]):
+                            x, y = nx, ny
+                            direction = (direction + i) % 4
+                            found_next = True
+                            break
                 
                 if not found_next:
                     break
