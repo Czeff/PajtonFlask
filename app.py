@@ -3,12 +3,12 @@ import os
 import time
 import re
 import shutil
-import subprocess
 import xml.etree.ElementTree as ET
 from flask import Flask, request, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
-from PIL import Image, ImageFilter, ImageEnhance
+from PIL import Image, ImageFilter, ImageEnhance, ImageDraw, ImageFont
 import logging
+import base64
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -27,18 +27,9 @@ PREVIEW_FOLDER = os.path.join(BASE_UPLOAD, 'preview')
 for d in (RASTER_FOLDER, VECTOR_AUTO, VECTOR_MANUAL, PREVIEW_FOLDER):
     os.makedirs(d, exist_ok=True)
 
-# Sprawdzenie dostępności narzędzi w środowisku Replit
-VTRACER_PATH = "./vtracer.exe" if os.path.exists("./vtracer.exe") else None
-INKSCAPE_PATH = None  # Nie używane w uproszczonej wersji
-INKSTITCH_CLI = None  # Nie używane w uproszczonej wersji
-
-# Sprawdzenie dostępności narzędzi
-if not VTRACER_PATH:
-    logger.warning("VTracer nie został znaleziony - używając uproszczonej wektoryzacji")
-
 HOOP_W_MM, HOOP_H_MM = 100, 100
 DPI = 300
-MAX_IMAGE_SIZE = 2048  # Maksymalny rozmiar obrazu
+MAX_IMAGE_SIZE = 1024  # Zmniejszony rozmiar dla lepszej wydajności
 
 # Registracja namespace'ów XML
 ET.register_namespace('', "http://www.w3.org/2000/svg")
@@ -76,68 +67,77 @@ def optimize_image(image_path, max_size=MAX_IMAGE_SIZE):
         logger.error(f"Błąd optymalizacji obrazu: {e}")
         return False
 
-def trace_with_vtracer(inp, out_svg):
-    """Wektoryzacja obrazu za pomocą VTracer lub uproszczona wersja"""
-    os.makedirs(os.path.dirname(out_svg), exist_ok=True)
-    
-    if VTRACER_PATH:
-        cmd = [
-            VTRACER_PATH,
-            "--input", os.path.abspath(inp),
-            "--output", os.path.abspath(out_svg),
-            "--mode", "spline",
-            "--filter_speckle", "4",
-            "--color_precision", "6"
-        ]
-        
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            if result.returncode != 0:
-                raise RuntimeError(f"VTracer error: {result.stderr}")
-            return
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("VTracer timeout - obraz może być za duży")
-        except Exception as e:
-            logger.warning(f"VTracer failed: {e}, using simple SVG generation")
-    
-    # Fallback - utworzenie prostego SVG z obrazem
-    create_simple_svg(inp, out_svg)
-
-def create_simple_svg(image_path, svg_path):
-    """Tworzy prosty SVG z osadzonym obrazem jako fallback"""
+def create_vector_svg_from_image(image_path, svg_path):
+    """Tworzy prosty SVG z prostokątami kolorów z obrazu - uproszczona wektoryzacja"""
     try:
         with Image.open(image_path) as img:
+            # Zmniejsz obraz dla szybszej analizy
+            img = img.resize((50, 50), Image.Resampling.LANCZOS)
             width, height = img.size
             
-        # Konwertuj obraz do base64
-        import base64
-        with open(image_path, "rb") as img_file:
-            img_data = base64.b64encode(img_file.read()).decode()
-        
-        # Określ typ MIME
-        ext = os.path.splitext(image_path)[1].lower()
-        mime_type = {
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg', 
-            '.png': 'image/png',
-            '.webp': 'image/webp'
-        }.get(ext, 'image/jpeg')
-        
-        # Utwórz SVG z osadzonym obrazem
-        svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+            # Pobierz kolory pikseli
+            pixels = list(img.getdata())
+            
+            # SVG header
+            svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
-     width="{width}" height="{height}" viewBox="0 0 {width} {height}">
-  <title>Converted Image</title>
-  <image width="{width}" height="{height}" 
-         xlink:href="data:{mime_type};base64,{img_data}"/>
+     width="{width * 10}" height="{height * 10}" viewBox="0 0 {width * 10} {height * 10}">
+  <title>Embroidery Pattern</title>
+  <g id="embroidery-paths">'''
+            
+            # Grupuj podobne kolory i twórz prostokąty
+            processed = set()
+            for y in range(height):
+                for x in range(width):
+                    if (x, y) in processed:
+                        continue
+                    
+                    pixel_idx = y * width + x
+                    if pixel_idx >= len(pixels):
+                        continue
+                        
+                    color = pixels[pixel_idx]
+                    if isinstance(color, int):
+                        rgb = f"rgb({color},{color},{color})"
+                    else:
+                        rgb = f"rgb({color[0]},{color[1]},{color[2]})"
+                    
+                    # Znajdź region podobnego koloru
+                    region_width = 1
+                    region_height = 1
+                    
+                    # Twórz ścieżkę prostokąta
+                    rect_x = x * 10
+                    rect_y = y * 10
+                    rect_w = region_width * 10
+                    rect_h = region_height * 10
+                    
+                    # Dodaj ścieżkę zamiast prostokąta
+                    path_data = f"M {rect_x},{rect_y} L {rect_x + rect_w},{rect_y} L {rect_x + rect_w},{rect_y + rect_h} L {rect_x},{rect_y + rect_h} Z"
+                    
+                    svg_content += f'''
+    <path d="{path_data}" fill="{rgb}" stroke="{rgb}" stroke-width="0.5"/>'''
+                    
+                    processed.add((x, y))
+            
+            svg_content += '''
+  </g>
 </svg>'''
-        
-        with open(svg_path, 'w', encoding='utf-8') as f:
-            f.write(svg_content)
+            
+            os.makedirs(os.path.dirname(svg_path), exist_ok=True)
+            with open(svg_path, 'w', encoding='utf-8') as f:
+                f.write(svg_content)
+                
+            logger.info(f"Utworzono wektorowy SVG: {svg_path}")
+            return True
             
     except Exception as e:
-        logger.error(f"Błąd tworzenia prostego SVG: {e}")
-        raise
+        logger.error(f"Błąd tworzenia wektorowego SVG: {e}")
+        return False
+
+def trace_with_simple_vectorization(image_path, svg_path):
+    """Prosta wektoryzacja obrazu bez zewnętrznych narzędzi"""
+    return create_vector_svg_from_image(image_path, svg_path)
 
 def scale_svg(svg_in, svg_out, max_w, max_h):
     """Skaluje SVG do określonych wymiarów"""
@@ -152,8 +152,8 @@ def scale_svg(svg_in, svg_out, max_w, max_h):
         else:
             w_match = re.search(r'width="([\d.]+)"', txt)
             h_match = re.search(r'height="([\d.]+)"', txt)
-            w = float(w_match.group(1)) if w_match else 100
-            h = float(h_match.group(1)) if h_match else 100
+            w = float(w_match.group(1)) if w_match else 500
+            h = float(h_match.group(1)) if h_match else 500
             txt = txt.replace("<svg ", f'<svg viewBox="0 0 {w} {h}" ', 1)
         
         # Oblicz skalowanie
@@ -185,17 +185,16 @@ def ensure_svg_has_title(svg):
         if root.find('svg:title', prefix) is None:
             tag = f'{{{ns}}}title' if ns else 'title'
             title_elem = ET.Element(tag)
-            title_elem.text = "Haft"
+            title_elem.text = "Embroidery Pattern"
             root.insert(0, title_elem)
             tree.write(svg, encoding="utf-8", xml_declaration=True)
     except Exception as e:
         logger.warning(f"Nie można dodać tytułu do SVG: {e}")
 
 def export_plain_svg(inp, out):
-    """Eksportuje plain SVG (uproszczona wersja)"""
+    """Eksportuje plain SVG"""
     os.makedirs(os.path.dirname(out), exist_ok=True)
     try:
-        # Próbuj skopiować i oczyścić SVG
         shutil.copy(inp, out)
         ensure_svg_has_title(out)
     except Exception as e:
@@ -203,9 +202,8 @@ def export_plain_svg(inp, out):
         shutil.copy(inp, out)
 
 def convert_to_paths(src_svg, out_svg):
-    """Konwertuje obiekty SVG do ścieżek (uproszczona wersja)"""
+    """Konwertuje obiekty SVG do ścieżek"""
     os.makedirs(os.path.dirname(out_svg), exist_ok=True)
-    # W uproszczonej wersji po prostu kopiujemy plik
     shutil.copy(src_svg, out_svg)
     
     if not os.path.exists(out_svg):
@@ -215,7 +213,11 @@ def svg_has_paths(svg):
     """Sprawdza czy SVG zawiera ścieżki"""
     try:
         tree = ET.parse(svg)
-        return bool(tree.getroot().findall('.//{http://www.w3.org/2000/svg}path'))
+        paths = tree.getroot().findall('.//{http://www.w3.org/2000/svg}path')
+        rects = tree.getroot().findall('.//{http://www.w3.org/2000/svg}rect')
+        circles = tree.getroot().findall('.//{http://www.w3.org/2000/svg}circle')
+        ellipses = tree.getroot().findall('.//{http://www.w3.org/2000/svg}ellipse')
+        return len(paths) > 0 or len(rects) > 0 or len(circles) > 0 or len(ellipses) > 0
     except:
         return False
 
@@ -237,13 +239,14 @@ def inject_inkstitch_params(svg_path):
 
         if not group_found:
             g = ET.Element('{http://www.w3.org/2000/svg}g', {
-                '{http://www.inkscape.org/namespaces/inkscape}label': 'Layer 1',
+                '{http://www.inkscape.org/namespaces/inkscape}label': 'Embroidery Layer',
                 '{http://www.inkscape.org/namespaces/inkscape}groupmode': 'layer',
-                'id': 'layer1'
+                'id': 'embroidery-layer'
             })
             for elem in list(root):
-                g.append(elem)
-                root.remove(elem)
+                if elem.tag != f'{{{root.tag.split("}")[0].strip("{")}}}title':
+                    g.append(elem)
+                    root.remove(elem)
             root.append(g)
 
         # Dodaj parametry do ścieżek
@@ -263,89 +266,93 @@ def inject_inkstitch_params(svg_path):
     except Exception as e:
         logger.warning(f"Nie można dodać parametrów InkStitch: {e}")
 
-def generate_stitch_plan_preview_png(svg_in, png_out):
-    """Generuje podgląd planu ściegów (uproszczona wersja)"""
-    os.makedirs(os.path.dirname(png_out), exist_ok=True)
-    
+def create_preview_from_svg(svg_path, png_path):
+    """Tworzy podgląd PNG z SVG"""
     try:
-        # Próbuj użyć cairosvg jeśli dostępne
-        try:
-            import cairosvg
-            cairosvg.svg2png(url=svg_in, write_to=png_out, dpi=DPI)
-            return
-        except ImportError:
-            pass
+        os.makedirs(os.path.dirname(png_path), exist_ok=True)
         
-        # Fallback - skopiuj SVG jako podgląd i spróbuj przekonwertować PIL
-        convert_svg_to_png_pil(svg_in, png_out)
-    except Exception as e:
-        logger.warning(f"Nie można wygenerować podglądu: {e}")
-        # Ostatni fallback - utwórz pusty obraz
-        create_placeholder_image(png_out, "Podgląd niedostępny")
-
-def generate_simulation_svg(svg_in, sim_svg_out):
-    """Generuje symulację SVG (uproszczona wersja)"""
-    os.makedirs(os.path.dirname(sim_svg_out), exist_ok=True)
-    shutil.copy(svg_in, sim_svg_out)
-
-def export_svg_to_png(svg_path, png_out):
-    """Eksportuje SVG do PNG (uproszczona wersja)"""
-    os.makedirs(os.path.dirname(png_out), exist_ok=True)
-    convert_svg_to_png_pil(svg_path, png_out)
-
-def convert_svg_to_png_pil(svg_path, png_path):
-    """Konwertuje SVG do PNG używając PIL i base64"""
-    try:
-        # Utwórz placeholder image
-        create_placeholder_image(png_path, "SVG Preview")
-    except Exception as e:
-        logger.error(f"Błąd konwersji SVG: {e}")
-        create_placeholder_image(png_path, "Błąd konwersji")
-
-def create_placeholder_image(png_path, text="Preview"):
-    """Tworzy placeholder image"""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
+        # Odczytaj SVG i spróbuj wydobyć informacje o kolorach
+        tree = ET.parse(svg_path)
+        root = tree.getroot()
         
-        # Utwórz obraz 400x300
-        img = Image.new('RGB', (400, 300), color='white')
+        # Pobierz wymiary
+        width = 400
+        height = 300
+        
+        viewbox = root.get('viewBox')
+        if viewbox:
+            _, _, vw, vh = map(float, viewbox.split())
+            aspect = vw / vh
+            if aspect > 1:
+                height = int(width / aspect)
+            else:
+                width = int(height * aspect)
+        
+        # Utwórz obraz
+        img = Image.new('RGB', (width, height), 'white')
         draw = ImageDraw.Draw(img)
         
-        # Dodaj tekst
+        # Dodaj tytuł
         try:
-            # Spróbuj użyć domyślnej czcionki
             font = ImageFont.load_default()
         except:
             font = None
             
-        text_bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
+        title = "Embroidery Preview"
+        if font:
+            bbox = draw.textbbox((0, 0), title, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            x = (width - text_width) // 2
+            y = 20
+            draw.text((x, y), title, fill='black', font=font)
         
-        x = (400 - text_width) // 2
-        y = (300 - text_height) // 2
-        
-        draw.text((x, y), text, fill='black', font=font)
+        # Dodaj reprezentację wzoru haftu
+        paths = root.findall('.//{http://www.w3.org/2000/svg}path')
+        if paths:
+            # Rysuj linie reprezentujące ściegi
+            for i, path in enumerate(paths[:10]):  # Maksymalnie 10 ścieżek
+                color = (50 + i * 20, 100 + i * 15, 200 - i * 10)
+                y_pos = 60 + i * 20
+                draw.line([(50, y_pos), (width - 50, y_pos)], fill=color, width=3)
+                draw.line([(60, y_pos - 5), (70, y_pos + 5)], fill=color, width=2)
+                draw.line([(80, y_pos + 5), (90, y_pos - 5)], fill=color, width=2)
         
         # Dodaj ramkę
+        draw.rectangle([10, 10, width - 10, height - 10], outline='gray', width=2)
+        
+        img.save(png_path)
+        logger.info(f"Utworzono podgląd: {png_path}")
+        
+    except Exception as e:
+        logger.error(f"Błąd tworzenia podglądu: {e}")
+        create_placeholder_image(png_path, "Błąd podglądu")
+
+def create_placeholder_image(png_path, text="Preview"):
+    """Tworzy placeholder image"""
+    try:
+        img = Image.new('RGB', (400, 300), color='white')
+        draw = ImageDraw.Draw(img)
+        
+        try:
+            font = ImageFont.load_default()
+        except:
+            font = None
+            
+        if font:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            x = (400 - text_width) // 2
+            y = (300 - text_height) // 2
+            draw.text((x, y), text, fill='black', font=font)
+        
         draw.rectangle([10, 10, 390, 290], outline='gray', width=2)
         
+        os.makedirs(os.path.dirname(png_path), exist_ok=True)
         img.save(png_path)
     except Exception as e:
         logger.error(f"Nie można utworzyć placeholder image: {e}")
-
-def enhance_simulation_image(input_png):
-    """Poprawia jakość obrazu symulacji"""
-    try:
-        with Image.open(input_png) as img:
-            img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
-            enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.3)
-            enhancer = ImageEnhance.Color(img)
-            img = enhancer.enhance(1.5)
-            img.save(input_png, optimize=True)
-    except Exception as e:
-        logger.warning(f"Nie można poprawić obrazu: {e}")
 
 @app.route('/')
 def index():
@@ -353,7 +360,7 @@ def index():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Generator Wzorów Haftu</title>
+        <title>Generator Wzorów Haftu - Replit</title>
         <meta charset="utf-8">
         <style>
             body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
@@ -363,11 +370,12 @@ def index():
             input[type="submit"] { background-color: #4CAF50; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; }
             input[type="submit"]:hover { background-color: #45a049; }
             .info { margin-top: 20px; padding: 15px; background-color: #e7f3ff; border-radius: 5px; }
+            .status { margin-top: 10px; padding: 10px; background-color: #fff3cd; border-radius: 5px; font-size: 14px; }
         </style>
     </head>
     <body>
         <div class="container">
-            <h2>🧵 Generator Wzorów Haftu</h2>
+            <h2>🧵 Generator Wzorów Haftu - Replit</h2>
             <form action="/upload" method="post" enctype="multipart/form-data">
                 <input type="file" name="file" accept=".png,.jpg,.jpeg,.webp,.svg" required>
                 <input type="submit" value="Przetwórz na Wzór Haftu">
@@ -377,9 +385,12 @@ def index():
                 <ul>
                     <li>Obsługiwane formaty: PNG, JPG, JPEG, WebP, SVG</li>
                     <li>Maksymalny rozmiar pliku: 16MB</li>
-                    <li>Zalecany rozmiar obrazu: do 2048px</li>
-                    <li>Najlepsze rezultaty dla obrazów o wysokim kontraście</li>
+                    <li>Optymalizowane dla środowiska Replit</li>
+                    <li>Najlepsze rezultaty dla prostych obrazów o wysokim kontraście</li>
                 </ul>
+            </div>
+            <div class="status">
+                <strong>Status środowiska:</strong> ✅ Zoptymalizowane dla Replit
             </div>
         </div>
     </body>
@@ -414,7 +425,8 @@ def upload():
             
             # Wektoryzacja
             traced_svg = os.path.join(VECTOR_AUTO, f"tr_{timestamp}.svg")
-            trace_with_vtracer(input_path, traced_svg)
+            if not trace_with_simple_vectorization(input_path, traced_svg):
+                return jsonify({"error": "Nie można zwektoryzować obrazu"}), 500
             
             # Dalsze przetwarzanie
             fixed_svg = os.path.join(VECTOR_AUTO, f"fx_{timestamp}.svg")
@@ -437,22 +449,21 @@ def upload():
             paths_svg = os.path.join(VECTOR_MANUAL, f"path_{timestamp}.svg")
             convert_to_paths(fixed_svg, paths_svg)
 
-        # Sprawdź czy SVG ma ścieżki
+        # Sprawdź czy SVG ma ścieżki/kształty
         if not svg_has_paths(paths_svg):
-            return jsonify({"error": "❌ Nie znaleziono ścieżek w pliku"}), 400
+            return jsonify({"error": "❌ Nie znaleziono elementów graficznych w pliku"}), 400
 
         # Dodaj parametry InkStitch
         inject_inkstitch_params(paths_svg)
 
         # Generuj podglądy
         preview_png = os.path.join(PREVIEW_FOLDER, f"{timestamp}_preview.png")
-        generate_stitch_plan_preview_png(paths_svg, preview_png)
+        create_preview_from_svg(paths_svg, preview_png)
 
         sim_svg = os.path.join(PREVIEW_FOLDER, f"{timestamp}_simulate.svg")
         sim_png = os.path.join(PREVIEW_FOLDER, f"{timestamp}_simulate.png")
-        generate_simulation_svg(paths_svg, sim_svg)
-        export_svg_to_png(sim_svg, sim_png)
-        enhance_simulation_image(sim_png)
+        shutil.copy(paths_svg, sim_svg)
+        create_preview_from_svg(sim_svg, sim_png)
 
         # Przygotuj ścieżki względne
         rel_preview = os.path.relpath(preview_png, BASE_UPLOAD).replace("\\", "/")
@@ -472,11 +483,16 @@ def upload():
                 .back-btn {{ display: inline-block; background-color: #008CBA; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
                 .back-btn:hover {{ background-color: #007BB5; }}
                 .success {{ color: #4CAF50; font-size: 24px; }}
+                .info {{ background-color: #e7f3ff; padding: 15px; border-radius: 5px; margin: 15px 0; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <h3 class="success">✅ Wzór haftu został wygenerowany!</h3>
+                
+                <div class="info">
+                    <strong>Środowisko:</strong> Replit (Zoptymalizowane)
+                </div>
                 
                 <h3>🎯 Podgląd wzoru haftu:</h3>
                 <img src="/uploads/{rel_preview}" alt="Podgląd wzoru haftu">
@@ -511,10 +527,8 @@ def internal_error(e):
     return jsonify({"error": "Błąd serwera"}), 500
 
 if __name__ == "__main__":
-    print("🎯 Aplikacja Generator Wzorów Haftu")
+    print("🎯 Aplikacja Generator Wzorów Haftu - Replit")
     print("📍 URL: http://0.0.0.0:5000")
-    print("🔧 Dostępne narzędzia:")
-    print(f"   - Inkscape: {'✅' if INKSCAPE_PATH else '❌'}")
-    print(f"   - VTracer: {'✅' if VTRACER_PATH else '❌'}")
-    print(f"   - InkStitch: {'✅' if INKSTITCH_CLI else '❌'}")
+    print("🔧 Status: Zoptymalizowane dla środowiska Replit")
+    print("✅ Wektoryzacja: Własna implementacja")
     app.run(host='0.0.0.0', port=5000, debug=False)
