@@ -7,3 +7,15 @@ packages = ["freetype", "gobject-introspection", "gtk3", "lcms2", "libimagequant
 
 [deployment]
 run = ["sh", "-c", "python app.py"]
+
+[workflows]
+runButton = "Run"
+
+[[workflows.workflow]]
+name = "Run"
+author = 44847630
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python app.py"
