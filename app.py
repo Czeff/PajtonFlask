@@ -1,7 +1,7 @@
 
 from flask import Flask, request, jsonify, render_template_string, send_file
 from werkzeug.utils import secure_filename
-from PIL import Image, ImageFilter, ImageOps, ImageEnhance
+from PIL import Image, ImageFilter, ImageOps, ImageEnhance, ImageDraw
 import os
 import time
 import math
@@ -10,13 +10,14 @@ import io
 import traceback
 import gc
 from collections import defaultdict
+import numpy as np
 
 app = Flask(__name__)
 
 # Konfiguracja
 UPLOAD_FOLDER = 'uploads'
-MAX_FILE_SIZE = 8 * 1024 * 1024  # Zmniejszono z 16MB do 8MB
-MAX_IMAGE_SIZE = 600  # Zmniejszono z 800 do 600 pikseli
+MAX_FILE_SIZE = 8 * 1024 * 1024  # 8MB
+MAX_IMAGE_SIZE = 400  # Zmniejszono dla lepszej wydajności
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'svg'}
 
 # Upewnij się, że katalogi istnieją
@@ -27,7 +28,7 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def optimize_image_for_vectorization(image_path, max_size=MAX_IMAGE_SIZE):
-    """Optymalizuje obraz do wektoryzacji z agresywną redukcją złożoności"""
+    """Optymalizuje obraz do wektoryzacji"""
     try:
         with Image.open(image_path) as img:
             # Konwersja do RGB
@@ -37,190 +38,207 @@ def optimize_image_for_vectorization(image_path, max_size=MAX_IMAGE_SIZE):
             # Zmniejsz rozmiar obrazu
             img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
             
-            # Zastosuj blur aby zmniejszyć detale
-            img = img.filter(ImageFilter.GaussianBlur(radius=1))
+            # Lekkie rozmycie dla wygładzenia
+            img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
             
-            # Zwiększ kontrast dla lepszej segmentacji
+            # Zwiększ kontrast
             enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.5)
-            
-            # Ostrzeż obraz
-            img = img.filter(ImageFilter.SHARPEN)
+            img = enhancer.enhance(1.2)
             
             return img
     except Exception as e:
         print(f"Błąd podczas optymalizacji obrazu: {e}")
         return None
 
-def quantize_colors_aggressive(image, max_colors=4):
-    """Agresywna kwantyzacja kolorów do maksymalnie 4 kolorów"""
+def extract_dominant_colors(image, max_colors=6):
+    """Wyciągnij dominujące kolory z obrazu używając PIL"""
     try:
-        # Użyj PIL do kwantyzacji z methodą MAXCOVERAGE
-        quantized = image.quantize(colors=max_colors, method=Image.Quantize.MAXCOVERAGE)
+        # Zmniejsz obraz dla szybszej analizy
+        small_image = image.copy()
+        small_image.thumbnail((50, 50))
         
-        # Konwertuj z powrotem do RGB
-        return quantized.convert('RGB')
+        # Kwantyzacja kolorów
+        palette_image = small_image.quantize(colors=max_colors)
+        palette = palette_image.getpalette()
+        
+        colors = []
+        for i in range(min(max_colors, len(palette) // 3)):
+            r = palette[i * 3] if i * 3 < len(palette) else 0
+            g = palette[i * 3 + 1] if i * 3 + 1 < len(palette) else 0
+            b = palette[i * 3 + 2] if i * 3 + 2 < len(palette) else 0
+            colors.append((r, g, b))
+        
+        return colors
     except Exception as e:
-        print(f"Błąd podczas kwantyzacji: {e}")
-        return image
+        print(f"Błąd podczas wyciągania kolorów: {e}")
+        return [(0, 0, 0), (128, 128, 128), (255, 255, 255)]
 
-def simplified_edge_detection(image, threshold1=50, threshold2=150):
-    """Uproszczona detekcja krawędzi z mniejszą złożonością"""
+def create_color_regions(image, colors):
+    """Tworzy regiony dla każdego koloru"""
     try:
-        # Konwertuj do skali szarości
-        gray = image.convert('L')
+        width, height = image.size
+        pixels = np.array(image)
         
-        # Zastosuj filtry krawędzi
-        edges = gray.filter(ImageFilter.FIND_EDGES)
+        regions = []
         
-        # Przekształć w binarny obraz
-        edges = edges.point(lambda x: 255 if x > 30 else 0, mode='1')
+        for color in colors:
+            # Utwórz maskę dla tego koloru
+            mask = np.zeros((height, width), dtype=bool)
+            
+            # Znajdź piksele podobne do tego koloru (z tolerancją)
+            tolerance = 30
+            for y in range(height):
+                for x in range(width):
+                    pixel = pixels[y, x]
+                    if (abs(int(pixel[0]) - color[0]) <= tolerance and
+                        abs(int(pixel[1]) - color[1]) <= tolerance and
+                        abs(int(pixel[2]) - color[2]) <= tolerance):
+                        mask[y, x] = True
+            
+            if np.any(mask):
+                regions.append((color, mask))
         
-        return edges.convert('L')
+        return regions
     except Exception as e:
-        print(f"Błąd podczas detekcji krawędzi: {e}")
-        return image.convert('L')
-
-def create_simple_path_from_edges(edges_image, simplification_factor=5):
-    """Tworzenie uproszczonych ścieżek SVG z obrazu krawędzi"""
-    try:
-        width, height = edges_image.size
-        paths = []
-        
-        # Znajdź kontury przy pomocy prostego algorytmu
-        contours = find_simple_contours(edges_image, simplification_factor)
-        
-        for contour in contours:
-            if len(contour) > 3:  # Tylko kontury z więcej niż 3 punktami
-                path_data = create_svg_path_from_contour(contour)
-                if path_data:
-                    paths.append(path_data)
-        
-        return paths
-    except Exception as e:
-        print(f"Błąd podczas tworzenia ścieżek: {e}")
+        print(f"Błąd podczas tworzenia regionów: {e}")
         return []
 
-def find_simple_contours(edges_image, simplification_factor=5):
-    """Znajdowanie konturów z uproszczonym algorytmem"""
-    width, height = edges_image.size
-    contours = []
-    visited = [[False for _ in range(width)] for _ in range(height)]
-    
-    # Konwertuj obraz do listy pikseli dla prostszej obróbki
-    pixels = list(edges_image.getdata())
-    
-    # Skanuj obraz w większych krokach dla lepszej wydajności
-    step = max(2, simplification_factor // 2)
-    
-    for y in range(0, height, step):
-        for x in range(0, width, step):
-            pixel_index = y * width + x
-            if pixel_index < len(pixels) and pixels[pixel_index] > 128 and not visited[y][x]:
-                # Znajdź kontur zaczynając od tego punktu
-                contour = trace_contour_simple(pixels, visited, x, y, width, height, simplification_factor)
-                if len(contour) > 5:  # Tylko znaczące kontury
-                    contours.append(contour)
-    
-    return contours
+def trace_region_contours(mask):
+    """Znajduje kontury regionu używając prostego algorytmu"""
+    try:
+        height, width = mask.shape
+        contours = []
+        
+        # Znajdź punkty brzegowe
+        edge_points = []
+        for y in range(1, height - 1):
+            for x in range(1, width - 1):
+                if mask[y, x]:
+                    # Sprawdź czy to punkt brzegowy
+                    if not (mask[y-1, x] and mask[y+1, x] and 
+                           mask[y, x-1] and mask[y, x+1]):
+                        edge_points.append((x, y))
+        
+        if len(edge_points) < 3:
+            return []
+        
+        # Pogrupuj punkty w kontury
+        if len(edge_points) > 50:  # Ogranicz liczbę punktów
+            step = len(edge_points) // 30
+            edge_points = edge_points[::step]
+        
+        # Uproszczony algorytm - zwróć wszystkie punkty jako jeden kontur
+        if len(edge_points) >= 3:
+            contours.append(edge_points)
+        
+        return contours
+    except Exception as e:
+        print(f"Błąd podczas śledzenia konturów: {e}")
+        return []
 
-def trace_contour_simple(pixels, visited, start_x, start_y, width, height, max_points=20):
-    """Uproszczone śledzenie konturu"""
-    contour = []
+def simplify_contour(contour, max_points=20):
+    """Upraszcza kontur redukując liczbę punktów"""
+    if len(contour) <= max_points:
+        return contour
     
-    # Kierunki: prawo, dół, lewo, góra
-    directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+    # Wybierz co n-ty punkt
+    step = len(contour) // max_points
+    simplified = contour[::step]
     
-    x, y = start_x, start_y
-    direction = 0
+    # Upewnij się, że mamy co najmniej 3 punkty
+    if len(simplified) < 3:
+        simplified = contour[:3] if len(contour) >= 3 else contour
     
-    for _ in range(max_points):
-        if 0 <= y < height and 0 <= x < width:
-            pixel_index = y * width + x
-            if pixel_index < len(pixels) and pixels[pixel_index] > 128 and not visited[y][x]:
-                contour.append((x, y))
-                visited[y][x] = True
-                
-                # Spróbuj znaleźć następny punkt
-                found_next = False
-                for i in range(4):
-                    dx, dy = directions[(direction + i) % 4]
-                    nx, ny = x + dx * 2, y + dy * 2  # Większe kroki
-                    
-                    if (0 <= ny < height and 0 <= nx < width):
-                        next_pixel_index = ny * width + nx
-                        if (next_pixel_index < len(pixels) and 
-                            pixels[next_pixel_index] > 128 and not visited[ny][nx]):
-                            x, y = nx, ny
-                            direction = (direction + i) % 4
-                            found_next = True
-                            break
-                
-                if not found_next:
-                    break
-            else:
-                break
-        else:
-            break
-    
-    return contour
+    return simplified
 
 def create_svg_path_from_contour(contour):
-    """Tworzenie ścieżki SVG z konturu"""
+    """Tworzy ścieżkę SVG z konturu"""
     if len(contour) < 3:
         return None
     
-    # Uproszczenie konturu - weź co n-ty punkt
-    simplified = contour[::max(1, len(contour) // 10)]
+    # Uproszczenie konturu
+    simplified = simplify_contour(contour, max_points=15)
     
     if len(simplified) < 3:
-        simplified = contour
+        return None
     
+    # Rozpocznij ścieżkę
     path_data = f"M {simplified[0][0]} {simplified[0][1]}"
     
     # Dodaj linie do pozostałych punktów
-    for point in simplified[1:]:
-        path_data += f" L {point[0]} {point[1]}"
+    for i, point in enumerate(simplified[1:], 1):
+        if i % 2 == 0 and i < len(simplified) - 1:
+            # Użyj krzywej beziera co drugi punkt dla wygładzenia
+            next_point = simplified[i + 1] if i + 1 < len(simplified) else simplified[0]
+            path_data += f" Q {point[0]} {point[1]} {next_point[0]} {next_point[1]}"
+        else:
+            path_data += f" L {point[0]} {point[1]}"
     
     path_data += " Z"  # Zamknij ścieżkę
     return path_data
 
 def vectorize_image_optimized(image_path, output_path):
-    """Zoptymalizowana wektoryzacja obrazu"""
+    """Ulepszona wektoryzacja obrazu"""
     try:
-        print("Rozpoczynanie optymalizowanej wektoryzacji...")
+        print("Rozpoczynanie wektoryzacji...")
         
         # Optymalizuj obraz
         optimized_image = optimize_image_for_vectorization(image_path)
         if not optimized_image:
+            print("Błąd optymalizacji obrazu")
             return False
         
-        print("Obraz zoptymalizowany")
+        print(f"Obraz zoptymalizowany do rozmiaru: {optimized_image.size}")
         
-        # Agresywna redukcja kolorów
-        quantized_image = quantize_colors_aggressive(optimized_image, max_colors=3)
-        print("Kolory zredukowane")
+        # Wyciągnij dominujące kolory
+        colors = extract_dominant_colors(optimized_image, max_colors=5)
+        print(f"Znaleziono {len(colors)} kolorów: {colors}")
         
-        # Detekcja krawędzi
-        edges = simplified_edge_detection(quantized_image)
-        print("Krawędzie wykryte")
+        if not colors:
+            print("Nie znaleziono kolorów")
+            return False
         
-        # Tworzenie ścieżek
-        paths = create_simple_path_from_edges(edges, simplification_factor=8)
-        print(f"Utworzono {len(paths)} ścieżek")
+        # Utwórz regiony kolorów
+        regions = create_color_regions(optimized_image, colors)
+        print(f"Utworzono {len(regions)} regionów")
         
-        # Uzyskaj kolory z skwantyzowanego obrazu
-        colors = extract_dominant_colors(quantized_image, max_colors=3)
+        if not regions:
+            print("Nie utworzono regionów")
+            return False
+        
+        # Generuj ścieżki SVG
+        svg_paths = []
+        for i, (color, mask) in enumerate(regions):
+            contours = trace_region_contours(mask)
+            print(f"Kolor {color}: {len(contours)} konturów")
+            
+            for contour in contours:
+                if len(contour) >= 3:
+                    path_data = create_svg_path_from_contour(contour)
+                    if path_data:
+                        svg_paths.append((color, path_data))
+        
+        print(f"Wygenerowano {len(svg_paths)} ścieżek SVG")
+        
+        if not svg_paths:
+            print("Nie wygenerowano żadnych ścieżek")
+            return False
         
         # Generuj SVG
         width, height = optimized_image.size
-        svg_content = generate_optimized_svg(paths, colors, width, height)
+        svg_content = generate_svg_with_paths(svg_paths, width, height)
         
         # Zapisz SVG
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(svg_content)
         
-        print("SVG wygenerowany pomyślnie")
+        print(f"SVG zapisany do: {output_path}")
+        
+        # Sprawdź czy plik nie jest pusty
+        if os.path.getsize(output_path) < 100:
+            print("Wygenerowany plik SVG jest za mały")
+            return False
+        
         return True
         
     except Exception as e:
@@ -228,34 +246,10 @@ def vectorize_image_optimized(image_path, output_path):
         traceback.print_exc()
         return False
     finally:
-        # Wymuś garbage collection
         gc.collect()
 
-def extract_dominant_colors(image, max_colors=3):
-    """Wyciągnij dominujące kolory z obrazu"""
-    try:
-        # Zmniejsz obraz dla szybszej analizy
-        small_image = image.copy()
-        small_image.thumbnail((100, 100))
-        
-        # Uzyskaj palety kolorów
-        palette_image = small_image.quantize(colors=max_colors)
-        palette = palette_image.getpalette()
-        
-        colors = []
-        for i in range(max_colors):
-            r = palette[i * 3]
-            g = palette[i * 3 + 1] 
-            b = palette[i * 3 + 2]
-            colors.append(f"rgb({r},{g},{b})")
-        
-        return colors
-    except Exception as e:
-        print(f"Błąd podczas wyciągania kolorów: {e}")
-        return ["#000000", "#808080", "#ffffff"]
-
-def generate_optimized_svg(paths, colors, width, height):
-    """Generuj zoptymalizowany SVG z parametrami InkStitch"""
+def generate_svg_with_paths(svg_paths, width, height):
+    """Generuje kompletny SVG z ścieżkami"""
     svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" 
      xmlns="http://www.w3.org/2000/svg"
@@ -264,26 +258,28 @@ def generate_optimized_svg(paths, colors, width, height):
   <defs>
     <style>
       .embroidery-path {{
-        fill: none;
-        stroke-width: 0.4;
+        stroke-width: 0.3;
         stroke-linejoin: round;
         stroke-linecap: round;
+        fill-opacity: 0.8;
       }}
     </style>
   </defs>
   <g inkscape:label="Embroidery" inkscape:groupmode="layer">'''
     
-    # Dodaj ścieżki z różnymi kolorami i parametrami haftu
-    for i, path in enumerate(paths[:15]):  # Ogranicz do 15 ścieżek
-        color = colors[i % len(colors)]
+    # Dodaj ścieżki
+    for i, (color, path_data) in enumerate(svg_paths):
+        color_str = f"rgb({color[0]},{color[1]},{color[2]})"
         svg_content += f'''
-    <path d="{path}" 
+    <path d="{path_data}" 
           class="embroidery-path"
-          style="stroke: {color};"
-          inkstitch:stroke_method="running_stitch"
-          inkstitch:running_stitch_length_mm="2.5"
-          inkstitch:running_stitch_tolerance_mm="0.1"
-          inkstitch:color="{color}" />'''
+          style="fill: {color_str}; stroke: {color_str};"
+          inkstitch:fill="1"
+          inkstitch:color="{color_str}"
+          inkstitch:angle="45"
+          inkstitch:row_spacing_mm="0.4"
+          inkstitch:end_row_spacing_mm="0.4"
+          inkstitch:max_stitch_length_mm="3.0" />'''
     
     svg_content += '''
   </g>
@@ -291,31 +287,30 @@ def generate_optimized_svg(paths, colors, width, height):
     
     return svg_content
 
-def create_preview_image(svg_path, preview_path, size=(400, 400)):
+def create_preview_image(svg_path, preview_path, size=(300, 300)):
     """Tworzy podgląd PNG z pliku SVG"""
     try:
-        # Dla uproszczenia, stwórz prosty podgląd tekstowy
+        # Utwórz prosty podgląd
         preview_img = Image.new('RGB', size, 'white')
-        
-        # Dodaj tekst informacyjny
-        from PIL import ImageDraw, ImageFont
         draw = ImageDraw.Draw(preview_img)
         
-        try:
-            # Spróbuj użyć domyślnej czcionki
-            font = ImageFont.load_default()
-        except:
-            font = None
+        # Narysuj prostokąt z informacją
+        draw.rectangle([10, 10, size[0]-10, size[1]-10], outline='black', width=2)
         
-        text = "Vector Preview\nEmbroidery Pattern\nGenerated"
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
+        # Dodaj tekst
+        text_lines = [
+            "Embroidery Preview",
+            "Vector Pattern",
+            "Generated Successfully"
+        ]
         
-        x = (size[0] - text_width) // 2
-        y = (size[1] - text_height) // 2
-        
-        draw.text((x, y), text, fill='black', font=font)
+        y_offset = size[1] // 2 - 30
+        for line in text_lines:
+            # Oblicz przybliżoną szerokość tekstu
+            text_width = len(line) * 6
+            x_pos = (size[0] - text_width) // 2
+            draw.text((x_pos, y_offset), line, fill='black')
+            y_offset += 20
         
         preview_img.save(preview_path, 'PNG')
         return True
@@ -329,7 +324,7 @@ def index():
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Generator Wzorów Haftu - Zoptymalizowany</title>
+    <title>Generator Wzorów Haftu - Naprawiona Wersja</title>
     <meta charset="utf-8">
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
@@ -341,17 +336,24 @@ def index():
         .preview { max-width: 100%; height: auto; border: 1px solid #ddd; }
         .warning { color: #d9534f; font-weight: bold; }
         .info { color: #5bc0de; }
+        .success { color: #5cb85c; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>🧵 Generator Wzorów Haftu - Wersja Zoptymalizowana</h1>
+    <h1>🧵 Generator Wzorów Haftu - Naprawiona Wersja</h1>
+    
+    <div class="success">
+        ✅ Naprawiono problem z pustymi plikami SVG
+        <br>• Ulepszona wektoryzacja z lepszym algorytmem konturów
+        <br>• Zwiększona stabilność generowania ścieżek SVG
+        <br>• Lepsze wykrywanie i przetwarzanie kolorów
+    </div>
     
     <div class="warning">
-        ⚠️ UWAGA: Wersja zoptymalizowana pod względem wydajności
+        ⚠️ Optymalizacje wydajności:
         <br>• Maksymalny rozmiar pliku: 8MB
-        <br>• Obrazy są automatycznie zmniejszane do 600px
-        <br>• Agresywna redukcja kolorów do maksymalnie 3-4 kolorów
-        <br>• Uproszczone algorytmy wektoryzacji
+        <br>• Obrazy są zmniejszane do 400px
+        <br>• Automatyczna redukcja kolorów do 5-6 dominujących
     </div>
     
     <div class="upload-area" onclick="document.getElementById('file').click()">
@@ -386,7 +388,7 @@ def index():
             formData.append('file', file);
             
             document.getElementById('result').style.display = 'block';
-            document.getElementById('result-content').innerHTML = '<p>Przetwarzanie... To może potrwać kilka minut.</p>';
+            document.getElementById('result-content').innerHTML = '<p>🔄 Przetwarzanie obrazu... To może potrwać 1-2 minuty.</p>';
             
             fetch('/vectorize', {
                 method: 'POST',
@@ -396,18 +398,19 @@ def index():
             .then(data => {
                 if (data.success) {
                     document.getElementById('result-content').innerHTML = 
-                        '<p>✅ Wektoryzacja zakończona pomyślnie!</p>' +
-                        '<img src="' + data.preview_url + '" class="preview" alt="Podgląd">' +
+                        '<p class="success">✅ Wektoryzacja zakończona pomyślnie!</p>' +
+                        '<p>Wygenerowano plik SVG z wzorem haftu.</p>' +
+                        '<img src="' + data.preview_url + '" class="preview" alt="Podgląd" style="max-width: 300px;">' +
                         '<br><br>' +
-                        '<a href="' + data.svg_url + '" download class="btn">Pobierz SVG</a>';
+                        '<a href="' + data.svg_url + '" download class="btn">📥 Pobierz SVG</a>';
                 } else {
                     document.getElementById('result-content').innerHTML = 
-                        '<p>❌ Błąd: ' + data.error + '</p>';
+                        '<p style="color: #d9534f;">❌ Błąd: ' + data.error + '</p>';
                 }
             })
             .catch(error => {
                 document.getElementById('result-content').innerHTML = 
-                    '<p>❌ Błąd połączenia: ' + error + '</p>';
+                    '<p style="color: #d9534f;">❌ Błąd połączenia: ' + error + '</p>';
             });
         }
     </script>
@@ -450,11 +453,17 @@ def vectorize():
         preview_filename = f"{timestamp}_preview.png"
         preview_path = os.path.join(UPLOAD_FOLDER, 'preview', preview_filename)
         
+        print(f"Rozpoczynanie wektoryzacji pliku: {input_path}")
+        
         # Wektoryzacja
         success = vectorize_image_optimized(input_path, svg_path)
         
         if not success:
-            return jsonify({'success': False, 'error': 'Nie można zwektoryzować obrazu'})
+            return jsonify({'success': False, 'error': 'Nie można zwektoryzować obrazu. Spróbuj z innym plikiem.'})
+        
+        # Sprawdź czy plik SVG został utworzony i nie jest pusty
+        if not os.path.exists(svg_path) or os.path.getsize(svg_path) < 100:
+            return jsonify({'success': False, 'error': 'Wygenerowany plik SVG jest pusty lub uszkodzony'})
         
         # Tworzenie podglądu
         create_preview_image(svg_path, preview_path)
@@ -462,17 +471,19 @@ def vectorize():
         # Wymuś czyszczenie pamięci
         gc.collect()
         
+        print(f"Wektoryzacja zakończona pomyślnie. Rozmiar pliku SVG: {os.path.getsize(svg_path)} bajtów")
+        
         return jsonify({
             'success': True,
             'svg_url': f'/download/vector_auto/{svg_filename}',
             'preview_url': f'/download/preview/{preview_filename}',
-            'message': 'Wektoryzacja zakończona pomyślnie'
+            'message': 'Wektoryzacja zakończona pomyślnie - plik SVG z wzorem haftu został wygenerowany'
         })
         
     except Exception as e:
         print(f"Błąd podczas wektoryzacji: {e}")
         traceback.print_exc()
-        return jsonify({'success': False, 'error': 'Błąd serwera podczas przetwarzania'})
+        return jsonify({'success': False, 'error': 'Błąd serwera podczas przetwarzania. Spróbuj ponownie.'})
 
 @app.route('/download/<path:subpath>')
 def download_file(subpath):
@@ -486,10 +497,10 @@ def download_file(subpath):
         return f"Błąd: {e}", 500
 
 if __name__ == '__main__':
-    print("🧵 Generator Wzorów Haftu - Wersja Zoptymalizowana")
-    print("⚡ Optymalizacje wydajności aktywne")
-    print("🔧 Maksymalny rozmiar obrazu: 600px")
-    print("🎨 Maksymalna liczba kolorów: 3-4")
+    print("🧵 Generator Wzorów Haftu - Naprawiona Wersja")
+    print("✅ Naprawiono problem z pustymi plikami SVG")
+    print("🔧 Ulepszona wektoryzacja z lepszymi algorytmami")
+    print("🎨 Stabilne wykrywanie kolorów i generowanie ścieżek")
     print("📡 Serwer uruchamiany na porcie 5000...")
     
     app.run(host='0.0.0.0', port=5000, debug=True)
