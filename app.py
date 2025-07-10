@@ -1,287 +1,521 @@
+
 import os
 import time
 import re
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
-from flask import Flask, request, send_from_directory
+from flask import Flask, request, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
 from PIL import Image, ImageFilter, ImageEnhance
+import logging
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-BASE_UPLOAD    = 'uploads'
-RASTER_FOLDER  = os.path.join(BASE_UPLOAD, 'raster')
-VECTOR_AUTO    = os.path.join(BASE_UPLOAD, 'vector_auto')
-VECTOR_MANUAL  = os.path.join(BASE_UPLOAD, 'vector_manual')
+# Konfiguracja logowania
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+BASE_UPLOAD = 'uploads'
+RASTER_FOLDER = os.path.join(BASE_UPLOAD, 'raster')
+VECTOR_AUTO = os.path.join(BASE_UPLOAD, 'vector_auto')
+VECTOR_MANUAL = os.path.join(BASE_UPLOAD, 'vector_manual')
 PREVIEW_FOLDER = os.path.join(BASE_UPLOAD, 'preview')
+
+# Tworzenie katalogów
 for d in (RASTER_FOLDER, VECTOR_AUTO, VECTOR_MANUAL, PREVIEW_FOLDER):
     os.makedirs(d, exist_ok=True)
 
-INKSCAPE_PATH = r"C:\Program Files\Inkscape\bin\inkscape.exe"
-VTRACER_PATH  = r"C:\PajtonFlask\vtracer.exe"
-INKSTITCH_CLI = r"C:\Users\wojci\AppData\Roaming\inkscape\extensions\inkstitch\inkstitch\bin\inkstitch.exe"
+# Dynamiczne ścieżki narzędzi
+def find_tool_path(tool_name, possible_paths):
+    """Znajdź ścieżkę do narzędzia w systemie"""
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    
+    # Sprawdź w PATH
+    if shutil.which(tool_name):
+        return shutil.which(tool_name)
+    
+    return None
+
+# Ścieżki narzędzi z fallbackami
+INKSCAPE_PATHS = [
+    "inkscape",
+    "/usr/bin/inkscape",
+    "/Applications/Inkscape.app/Contents/MacOS/inkscape",
+    r"C:\Program Files\Inkscape\bin\inkscape.exe"
+]
+
+VTRACER_PATHS = [
+    "./vtracer.exe",
+    "./vtracer",
+    "vtracer"
+]
+
+INKSTITCH_PATHS = [
+    "./inkstitch-main/inkstitch.py",
+    "inkstitch"
+]
+
+INKSCAPE_PATH = find_tool_path("inkscape", INKSCAPE_PATHS)
+VTRACER_PATH = find_tool_path("vtracer", VTRACER_PATHS)
+INKSTITCH_CLI = find_tool_path("inkstitch", INKSTITCH_PATHS)
+
+# Sprawdzenie dostępności narzędzi
+if not INKSCAPE_PATH:
+    logger.warning("Inkscape nie został znaleziony")
+if not VTRACER_PATH:
+    logger.warning("VTracer nie został znaleziony")
+if not INKSTITCH_CLI:
+    logger.warning("InkStitch nie został znaleziony")
 
 HOOP_W_MM, HOOP_H_MM = 100, 100
 DPI = 300
+MAX_IMAGE_SIZE = 2048  # Maksymalny rozmiar obrazu
 
-ET.register_namespace('',    "http://www.w3.org/2000/svg")
-ET.register_namespace('xlink','http://www.w3.org/1999/xlink')
-ET.register_namespace('inkscape','http://www.inkscape.org/namespaces/inkscape')
-ET.register_namespace('sodipodi','http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd')
+# Registracja namespace'ów XML
+ET.register_namespace('', "http://www.w3.org/2000/svg")
+ET.register_namespace('xlink', 'http://www.w3.org/1999/xlink')
+ET.register_namespace('inkscape', 'http://www.inkscape.org/namespaces/inkscape')
+ET.register_namespace('sodipodi', 'http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd')
 INKSTITCH_NS = "http://inkstitch.org/namespace"
 
+def optimize_image(image_path, max_size=MAX_IMAGE_SIZE):
+    """Optymalizuje rozmiar obrazu przed przetwarzaniem"""
+    try:
+        with Image.open(image_path) as img:
+            # Konwersja do RGB jeśli potrzebne
+            if img.mode in ('RGBA', 'LA'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'RGBA':
+                    background.paste(img, mask=img.split()[-1])
+                else:
+                    background.paste(img)
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Zmniejsz rozmiar jeśli za duży
+            if max(img.size) > max_size:
+                ratio = max_size / max(img.size)
+                new_size = tuple(int(dim * ratio) for dim in img.size)
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
+                logger.info(f"Zmniejszono obraz do {new_size}")
+            
+            # Zapisz zoptymalizowany obraz
+            img.save(image_path, 'JPEG', quality=85, optimize=True)
+            return True
+    except Exception as e:
+        logger.error(f"Błąd optymalizacji obrazu: {e}")
+        return False
+
 def trace_with_vtracer(inp, out_svg):
+    """Wektoryzacja obrazu za pomocą VTracer"""
+    if not VTRACER_PATH:
+        raise RuntimeError("VTracer nie jest dostępny")
+    
     os.makedirs(os.path.dirname(out_svg), exist_ok=True)
-    r = subprocess.run([
+    
+    cmd = [
         VTRACER_PATH,
-        "--input",  os.path.abspath(inp),
+        "--input", os.path.abspath(inp),
         "--output", os.path.abspath(out_svg),
-        "--mode",   "spline",
-        "--filter_speckle", "4"
-    ], capture_output=True, text=True)
-    if r.returncode:
-        raise RuntimeError("vtracer:\n" + r.stderr)
+        "--mode", "spline",
+        "--filter_speckle", "4",
+        "--color_precision", "6"
+    ]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            raise RuntimeError(f"VTracer error: {result.stderr}")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("VTracer timeout - obraz może być za duży")
 
 def scale_svg(svg_in, svg_out, max_w, max_h):
-    txt = open(svg_in, encoding="utf-8").read()
-    m = re.search(r'viewBox="([\d.\s\-]+)"', txt)
-    if m:
-        _,_,w,h = map(float, m.group(1).split())
-    else:
-        wm = re.search(r'width="([\d.]+)"', txt)
-        hm = re.search(r'height="([\d.]+)"', txt)
-        w = float(wm.group(1)) if wm else 100
-        h = float(hm.group(1)) if hm else 100
-        txt = txt.replace("<svg ", f'<svg viewBox="0 0 {w} {h}" ', 1)
-    sx = max_w * DPI/25.4 / w
-    sy = max_h * DPI/25.4 / h
-    sc = min(sx, sy)
-    nw, nh = w*sc, h*sc
-    txt = re.sub(r'width="[^"]+"',  f'width="{nw}px"',  txt)
-    txt = re.sub(r'height="[^"]+"', f'height="{nh}px"', txt)
-    os.makedirs(os.path.dirname(svg_out), exist_ok=True)
-    open(svg_out, "w", encoding="utf-8").write(txt)
+    """Skaluje SVG do określonych wymiarów"""
+    try:
+        with open(svg_in, 'r', encoding='utf-8') as f:
+            txt = f.read()
+        
+        # Znajdź wymiary
+        viewbox_match = re.search(r'viewBox="([\d.\s\-]+)"', txt)
+        if viewbox_match:
+            _, _, w, h = map(float, viewbox_match.group(1).split())
+        else:
+            w_match = re.search(r'width="([\d.]+)"', txt)
+            h_match = re.search(r'height="([\d.]+)"', txt)
+            w = float(w_match.group(1)) if w_match else 100
+            h = float(h_match.group(1)) if h_match else 100
+            txt = txt.replace("<svg ", f'<svg viewBox="0 0 {w} {h}" ', 1)
+        
+        # Oblicz skalowanie
+        scale_x = max_w * DPI / 25.4 / w
+        scale_y = max_h * DPI / 25.4 / h
+        scale = min(scale_x, scale_y)
+        
+        new_w, new_h = w * scale, h * scale
+        
+        # Zastąp wymiary
+        txt = re.sub(r'width="[^"]+"', f'width="{new_w}px"', txt)
+        txt = re.sub(r'height="[^"]+"', f'height="{new_h}px"', txt)
+        
+        os.makedirs(os.path.dirname(svg_out), exist_ok=True)
+        with open(svg_out, 'w', encoding='utf-8') as f:
+            f.write(txt)
+            
+    except Exception as e:
+        raise RuntimeError(f"Błąd skalowania SVG: {e}")
 
 def ensure_svg_has_title(svg):
-    tree = ET.parse(svg)
-    root = tree.getroot()
-    ns = root.tag.split("}")[0].strip("{") if "}" in root.tag else ""
-    prefix = {'svg':ns} if ns else {}
-    if root.find('svg:title', prefix) is None:
-        tag = f'{{{ns}}}title' if ns else 'title'
-        t = ET.Element(tag); t.text="Haft"
-        root.insert(0, t)
-        tree.write(svg, encoding="utf-8", xml_declaration=True)
+    """Dodaje tytuł do SVG jeśli go nie ma"""
+    try:
+        tree = ET.parse(svg)
+        root = tree.getroot()
+        ns = root.tag.split("}")[0].strip("{") if "}" in root.tag else ""
+        prefix = {'svg': ns} if ns else {}
+        
+        if root.find('svg:title', prefix) is None:
+            tag = f'{{{ns}}}title' if ns else 'title'
+            title_elem = ET.Element(tag)
+            title_elem.text = "Haft"
+            root.insert(0, title_elem)
+            tree.write(svg, encoding="utf-8", xml_declaration=True)
+    except Exception as e:
+        logger.warning(f"Nie można dodać tytułu do SVG: {e}")
+
+def run_inkscape_command(args, timeout=30):
+    """Uruchamia komendę Inkscape z timeout"""
+    if not INKSCAPE_PATH:
+        raise RuntimeError("Inkscape nie jest dostępny")
+    
+    cmd = [INKSCAPE_PATH] + args
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0:
+            raise RuntimeError(f"Inkscape error: {result.stderr}")
+        return result
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Inkscape timeout")
 
 def export_plain_svg(inp, out):
+    """Eksportuje plain SVG"""
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    subprocess.run([
-        INKSCAPE_PATH,
+    run_inkscape_command([
         "--export-plain-svg",
         f"--export-filename={out}",
         inp
-    ], check=True)
+    ])
     ensure_svg_has_title(out)
 
 def convert_to_paths(src_svg, out_svg):
-    src = os.path.abspath(src_svg).replace("\\","/")
-    out = os.path.abspath(out_svg).replace("\\","/")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    res = subprocess.run([
-        INKSCAPE_PATH,
+    """Konwertuje obiekty SVG do ścieżek"""
+    os.makedirs(os.path.dirname(out_svg), exist_ok=True)
+    run_inkscape_command([
         "--actions=select-all;object-to-path",
         "--export-plain-svg",
-        f"--export-filename={out}",
-        src
-    ], capture_output=True, text=True)
-    if res.returncode:
-        raise RuntimeError("Inkscape convert_to_paths failed:\n"+res.stderr)
-    if not os.path.exists(out):
-        raise FileNotFoundError(f"After convert_to_paths, missing:\n  {out}")
+        f"--export-filename={out_svg}",
+        src_svg
+    ])
+    
+    if not os.path.exists(out_svg):
+        raise FileNotFoundError(f"Nie udało się utworzyć pliku: {out_svg}")
 
 def svg_has_paths(svg):
-    tree = ET.parse(svg)
-    return bool(tree.getroot().findall('.//{http://www.w3.org/2000/svg}path'))
+    """Sprawdza czy SVG zawiera ścieżki"""
+    try:
+        tree = ET.parse(svg)
+        return bool(tree.getroot().findall('.//{http://www.w3.org/2000/svg}path'))
+    except:
+        return False
 
 def inject_inkstitch_params(svg_path):
-    ET.register_namespace('inkstitch', INKSTITCH_NS)
-    ET.register_namespace('inkscape', "http://www.inkscape.org/namespaces/inkscape")
+    """Dodaje parametry InkStitch do SVG"""
+    try:
+        ET.register_namespace('inkstitch', INKSTITCH_NS)
+        ET.register_namespace('inkscape', "http://www.inkscape.org/namespaces/inkscape")
 
-    tree = ET.parse(svg_path)
-    root = tree.getroot()
+        tree = ET.parse(svg_path)
+        root = tree.getroot()
 
-    group_found = False
-    for elem in root.findall('{http://www.w3.org/2000/svg}g'):
-        if elem.attrib.get('{http://www.inkscape.org/namespaces/inkscape}groupmode') == 'layer':
-            group_found = True
-            break
+        # Sprawdź czy istnieje layer
+        group_found = False
+        for elem in root.findall('{http://www.w3.org/2000/svg}g'):
+            if elem.attrib.get('{http://www.inkscape.org/namespaces/inkscape}groupmode') == 'layer':
+                group_found = True
+                break
 
-    if not group_found:
-        g = ET.Element('{http://www.w3.org/2000/svg}g', {
-            '{http://www.inkscape.org/namespaces/inkscape}label': 'Layer 1',
-            '{http://www.inkscape.org/namespaces/inkscape}groupmode': 'layer',
-            'id': 'layer1'
-        })
-        for elem in list(root):
-            g.append(elem)
-            root.remove(elem)
-        root.append(g)
+        if not group_found:
+            g = ET.Element('{http://www.w3.org/2000/svg}g', {
+                '{http://www.inkscape.org/namespaces/inkscape}label': 'Layer 1',
+                '{http://www.inkscape.org/namespaces/inkscape}groupmode': 'layer',
+                'id': 'layer1'
+            })
+            for elem in list(root):
+                g.append(elem)
+                root.remove(elem)
+            root.append(g)
 
-    for path in root.findall('.//{http://www.w3.org/2000/svg}path'):
-        has_params = path.find(f'{{{INKSTITCH_NS}}}params')
-        if has_params is None:
-            param_elem = ET.Element(f'{{{INKSTITCH_NS}}}params')
-            param_elem.text = '''{
+        # Dodaj parametry do ścieżek
+        for path in root.findall('.//{http://www.w3.org/2000/svg}path'):
+            if path.find(f'{{{INKSTITCH_NS}}}params') is None:
+                param_elem = ET.Element(f'{{{INKSTITCH_NS}}}params')
+                param_elem.text = '''{
   "stitch_type": "fill",
   "fill_angle": 45,
   "spacing": 0.4,
-  "underlay": {
-    "type": "none"
-  },
+  "underlay": {"type": "none"},
   "pull_compensation": 0.0
 }'''
-            path.append(param_elem)
+                path.append(param_elem)
 
-    tree.write(svg_path, encoding='utf-8', xml_declaration=True)
+        tree.write(svg_path, encoding='utf-8', xml_declaration=True)
+    except Exception as e:
+        logger.warning(f"Nie można dodać parametrów InkStitch: {e}")
 
 def generate_stitch_plan_preview_png(svg_in, png_out):
-    stitch_svg = svg_in.replace(".svg","_stitch_plan_preview.svg")
+    """Generuje podgląd planu ściegów"""
+    if not INKSTITCH_CLI:
+        # Fallback - użyj Inkscape do eksportu
+        run_inkscape_command([
+            "--export-type=png",
+            f"--export-filename={png_out}",
+            "--export-dpi", str(DPI),
+            svg_in
+        ])
+        return
+
+    stitch_svg = svg_in.replace(".svg", "_stitch_plan_preview.svg")
     os.makedirs(os.path.dirname(stitch_svg), exist_ok=True)
-    cmd = [
-        INKSTITCH_CLI,
-        svg_in,
-        "--extension=stitch_plan_preview",
-        "--layer-visibility=visible"
-    ]
-    with open(stitch_svg, "wb") as out:
-        r = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE)
-    if r.returncode:
-        raise RuntimeError("Ink/Stitch stitch_plan_preview:\n" + r.stderr.decode())
-    subprocess.run([
-        INKSCAPE_PATH,
-        "--export-type=png",
-        f"--export-filename={png_out}",
-        "--export-dpi", str(DPI),
-        stitch_svg
-    ], check=True)
-    if not os.path.exists(png_out):
-        raise RuntimeError("PNG preview not generated")
+    
+    try:
+        cmd = [INKSTITCH_CLI, svg_in, "--extension=stitch_plan_preview"]
+        with open(stitch_svg, "wb") as out:
+            subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE, timeout=30)
+        
+        run_inkscape_command([
+            "--export-type=png",
+            f"--export-filename={png_out}",
+            "--export-dpi", str(DPI),
+            stitch_svg
+        ])
+    except Exception as e:
+        logger.warning(f"Błąd generowania podglądu ściegów: {e}")
+        # Fallback
+        run_inkscape_command([
+            "--export-type=png",
+            f"--export-filename={png_out}",
+            "--export-dpi", str(DPI),
+            svg_in
+        ])
 
 def generate_simulation_svg(svg_in, sim_svg_out):
-    cmd = [
-        INKSTITCH_CLI,
-        svg_in,
-        "--extension=simulator"
-    ]
-    os.makedirs(os.path.dirname(sim_svg_out), exist_ok=True)
-    with open(sim_svg_out, "wb") as out:
-        r = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE)
-    if r.returncode:
-        raise RuntimeError("Ink/Stitch simulate:\n" + r.stderr.decode())
-    if not os.path.exists(sim_svg_out):
-        raise RuntimeError("Simulation SVG not generated")
+    """Generuje symulację SVG"""
+    if not INKSTITCH_CLI:
+        shutil.copy(svg_in, sim_svg_out)
+        return
+
+    try:
+        cmd = [INKSTITCH_CLI, svg_in, "--extension=simulator"]
+        os.makedirs(os.path.dirname(sim_svg_out), exist_ok=True)
+        with open(sim_svg_out, "wb") as out:
+            subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE, timeout=30)
+    except Exception as e:
+        logger.warning(f"Błąd generowania symulacji: {e}")
+        shutil.copy(svg_in, sim_svg_out)
 
 def export_svg_to_png(svg_path, png_out):
-    subprocess.run([
-        INKSCAPE_PATH,
+    """Eksportuje SVG do PNG"""
+    run_inkscape_command([
         "--export-type=png",
         f"--export-filename={png_out}",
         "--export-dpi", str(DPI),
         svg_path
-    ], check=True)
-    if not os.path.exists(png_out):
-        raise RuntimeError("PNG not generated from SVG")
+    ])
 
 def enhance_simulation_image(input_png):
-    img = Image.open(input_png)
-    img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
-    enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(1.3)
-    enhancer = ImageEnhance.Color(img)
-    img = enhancer.enhance(1.5)
-    img.save(input_png)
+    """Poprawia jakość obrazu symulacji"""
+    try:
+        with Image.open(input_png) as img:
+            img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
+            enhancer = ImageEnhance.Contrast(img)
+            img = enhancer.enhance(1.3)
+            enhancer = ImageEnhance.Color(img)
+            img = enhancer.enhance(1.5)
+            img.save(input_png, optimize=True)
+    except Exception as e:
+        logger.warning(f"Nie można poprawić obrazu: {e}")
 
 @app.route('/')
 def index():
-    return '''<h2>Wgraj plik rastrowy lub wektorowy</h2>
-<form action="/upload" method="post" enctype="multipart/form-data">
-  <input type="file" name="file" required><br><br>
-  <input type="submit" value="Wyślij">
-</form>'''
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Generator Wzorów Haftu</title>
+        <meta charset="utf-8">
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h2 { color: #333; text-align: center; }
+            input[type="file"] { width: 100%; padding: 10px; margin: 10px 0; border: 2px dashed #ccc; border-radius: 5px; }
+            input[type="submit"] { background-color: #4CAF50; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; }
+            input[type="submit"]:hover { background-color: #45a049; }
+            .info { margin-top: 20px; padding: 15px; background-color: #e7f3ff; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>🧵 Generator Wzorów Haftu</h2>
+            <form action="/upload" method="post" enctype="multipart/form-data">
+                <input type="file" name="file" accept=".png,.jpg,.jpeg,.webp,.svg" required>
+                <input type="submit" value="Przetwórz na Wzór Haftu">
+            </form>
+            <div class="info">
+                <h3>ℹ️ Informacje:</h3>
+                <ul>
+                    <li>Obsługiwane formaty: PNG, JPG, JPEG, WebP, SVG</li>
+                    <li>Maksymalny rozmiar pliku: 16MB</li>
+                    <li>Zalecany rozmiar obrazu: do 2048px</li>
+                    <li>Najlepsze rezultaty dla obrazów o wysokim kontraście</li>
+                </ul>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
 
 @app.route('/upload', methods=["POST"])
 def upload():
-    f = request.files.get("file")
-    if not f:
-        return "Nie przesłano pliku.", 400
-
-    name = secure_filename(f.filename.lower())
-    ts = str(int(time.time()))
-    ext = os.path.splitext(name)[1]
-    if ext not in [".png", ".jpg", ".jpeg", ".webp", ".svg"]:
-        return f"Nieobsługiwany format: {ext}", 400
-
-    in_dir, vec_dir = (
-        (RASTER_FOLDER, VECTOR_AUTO)
-        if ext in [".png", ".jpg", ".jpeg", ".webp"]
-        else (VECTOR_MANUAL, VECTOR_MANUAL)
-    )
-
-    inp_path = os.path.join(in_dir, f"{ts}_{name}")
-    f.save(inp_path)
-
     try:
+        f = request.files.get("file")
+        if not f or f.filename == '':
+            return jsonify({"error": "Nie przesłano pliku"}), 400
+
+        filename = secure_filename(f.filename.lower())
+        if not filename:
+            return jsonify({"error": "Nieprawidłowa nazwa pliku"}), 400
+
+        ext = os.path.splitext(filename)[1]
+        if ext not in [".png", ".jpg", ".jpeg", ".webp", ".svg"]:
+            return jsonify({"error": f"Nieobsługiwany format: {ext}"}), 400
+
+        timestamp = str(int(time.time()))
+        
         if ext in [".png", ".jpg", ".jpeg", ".webp"]:
-            traced = os.path.join(vec_dir, f"tr_{ts}.svg")
-            trace_with_vtracer(inp_path, traced)
-            fixed = os.path.join(vec_dir, f"fx_{ts}.svg")
-            export_plain_svg(traced, fixed)
-            scaled = os.path.join(vec_dir, f"sc_{ts}.svg")
-            scale_svg(fixed, scaled, HOOP_W_MM, HOOP_H_MM)
-            paths = os.path.join(vec_dir, f"path_{ts}.svg")
-            convert_to_paths(scaled, paths)
-            inject_inkstitch_params(paths)
+            # Przetwarzanie obrazów rastrowych
+            input_path = os.path.join(RASTER_FOLDER, f"{timestamp}_{filename}")
+            f.save(input_path)
+            
+            # Optymalizuj obraz
+            if not optimize_image(input_path):
+                return jsonify({"error": "Nie można zoptymalizować obrazu"}), 500
+            
+            # Wektoryzacja
+            traced_svg = os.path.join(VECTOR_AUTO, f"tr_{timestamp}.svg")
+            trace_with_vtracer(input_path, traced_svg)
+            
+            # Dalsze przetwarzanie
+            fixed_svg = os.path.join(VECTOR_AUTO, f"fx_{timestamp}.svg")
+            export_plain_svg(traced_svg, fixed_svg)
+            
+            scaled_svg = os.path.join(VECTOR_AUTO, f"sc_{timestamp}.svg")
+            scale_svg(fixed_svg, scaled_svg, HOOP_W_MM, HOOP_H_MM)
+            
+            paths_svg = os.path.join(VECTOR_AUTO, f"path_{timestamp}.svg")
+            convert_to_paths(scaled_svg, paths_svg)
+            
         else:
-            raw = os.path.join(vec_dir, f"raw_{ts}.svg")
-            shutil.copy(inp_path, raw)
-            fixed = os.path.join(vec_dir, f"fx_{ts}.svg")
-            export_plain_svg(raw, fixed)
-            paths = os.path.join(vec_dir, f"path_{ts}.svg")
-            convert_to_paths(fixed, paths)
-            inject_inkstitch_params(paths)
+            # Przetwarzanie plików SVG
+            raw_svg = os.path.join(VECTOR_MANUAL, f"raw_{timestamp}.svg")
+            f.save(raw_svg)
+            
+            fixed_svg = os.path.join(VECTOR_MANUAL, f"fx_{timestamp}.svg")
+            export_plain_svg(raw_svg, fixed_svg)
+            
+            paths_svg = os.path.join(VECTOR_MANUAL, f"path_{timestamp}.svg")
+            convert_to_paths(fixed_svg, paths_svg)
 
-        if not svg_has_paths(paths):
-            snip = open(paths, encoding="utf-8").read(300)
-            return f"❌ Brak ścieżek:<br><pre>{snip}</pre>", 400
+        # Sprawdź czy SVG ma ścieżki
+        if not svg_has_paths(paths_svg):
+            return jsonify({"error": "❌ Nie znaleziono ścieżek w pliku"}), 400
 
-        prev = os.path.join(PREVIEW_FOLDER, f"{ts}_preview.png")
-        generate_stitch_plan_preview_png(paths, prev)
+        # Dodaj parametry InkStitch
+        inject_inkstitch_params(paths_svg)
 
-        sim_svg = os.path.join(PREVIEW_FOLDER, f"{ts}_simulate.svg")
-        sim_png = os.path.join(PREVIEW_FOLDER, f"{ts}_simulate.png")
-        generate_simulation_svg(paths, sim_svg)
+        # Generuj podglądy
+        preview_png = os.path.join(PREVIEW_FOLDER, f"{timestamp}_preview.png")
+        generate_stitch_plan_preview_png(paths_svg, preview_png)
+
+        sim_svg = os.path.join(PREVIEW_FOLDER, f"{timestamp}_simulate.svg")
+        sim_png = os.path.join(PREVIEW_FOLDER, f"{timestamp}_simulate.png")
+        generate_simulation_svg(paths_svg, sim_svg)
         export_svg_to_png(sim_svg, sim_png)
         enhance_simulation_image(sim_png)
 
-        rel_prev = os.path.relpath(prev, BASE_UPLOAD).replace("\\", "/")
-        rel_sim = os.path.relpath(sim_png, BASE_UPLOAD).replace("\\", "/")
+        # Przygotuj ścieżki względne
+        rel_preview = os.path.relpath(preview_png, BASE_UPLOAD).replace("\\", "/")
+        rel_simulation = os.path.relpath(sim_png, BASE_UPLOAD).replace("\\", "/")
 
         return f'''
-        <h3>✅ Podgląd haftu:</h3>
-        <img src="/uploads/{rel_prev}" width="600"><br><br>
-        <h3>🎮 Symulacja:</h3>
-        <img src="/uploads/{rel_sim}" width="600"><br>
-        <a href="/">Wróć</a>
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Wzór Haftu - Wynik</title>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
+                .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                h3 {{ color: #333; }}
+                img {{ max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px; margin: 10px 0; }}
+                .back-btn {{ display: inline-block; background-color: #008CBA; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
+                .back-btn:hover {{ background-color: #007BB5; }}
+                .success {{ color: #4CAF50; font-size: 24px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h3 class="success">✅ Wzór haftu został wygenerowany!</h3>
+                
+                <h3>🎯 Podgląd wzoru haftu:</h3>
+                <img src="/uploads/{rel_preview}" alt="Podgląd wzoru haftu">
+                
+                <h3>🎮 Symulacja haftu:</h3>
+                <img src="/uploads/{rel_simulation}" alt="Symulacja haftu">
+                
+                <a href="/" class="back-btn">← Powrót do generatora</a>
+            </div>
+        </body>
+        </html>
         '''
 
     except Exception as e:
-        return f'<pre style="color:red;">Błąd:\n{e}</pre>', 500
+        logger.error(f"Błąd przetwarzania: {e}")
+        return jsonify({"error": f"Błąd przetwarzania: {str(e)}"}), 500
 
 @app.route('/uploads/<path:filename>')
 def serve_upload(filename):
     return send_from_directory(BASE_UPLOAD, filename)
 
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({"error": "Plik jest za duży (max 16MB)"}), 413
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Nie znaleziono zasobu"}), 404
+
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({"error": "Błąd serwera"}), 500
+
 if __name__ == "__main__":
-    print("\u2705 Aplikacja: http://127.0.0.1:5000")
-    app.run(debug=True)
+    print("🎯 Aplikacja Generator Wzorów Haftu")
+    print("📍 URL: http://0.0.0.0:5000")
+    print("🔧 Dostępne narzędzia:")
+    print(f"   - Inkscape: {'✅' if INKSCAPE_PATH else '❌'}")
+    print(f"   - VTracer: {'✅' if VTRACER_PATH else '❌'}")
+    print(f"   - InkStitch: {'✅' if INKSTITCH_CLI else '❌'}")
+    app.run(host='0.0.0.0', port=5000, debug=False)
