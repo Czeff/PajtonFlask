@@ -15,7 +15,11 @@ from scipy import ndimage
 from skimage import measure, morphology, segmentation
 from skimage.filters import gaussian
 from skimage.color import rgb2lab, lab2rgb
-import cv2
+try:
+    import cv2
+except ImportError:
+    print("⚠️ OpenCV nie jest dostępne - używam fallback metod")
+    cv2 = None
 
 app = Flask(__name__)
 
@@ -238,7 +242,9 @@ def trace_contours_advanced(mask):
         smoothed_mask = ndimage.gaussian_filter(mask.astype(float), sigma=1.0) > 0.5
         
         try:
-            # Próba z OpenCV
+            # Próba z OpenCV jeśli dostępne
+            if cv2 is None:
+                raise ImportError("OpenCV not available")
             mask_uint8 = (smoothed_mask * 255).astype(np.uint8)
             
             # Użyj różnych metod w zależności od rozmiaru maski
@@ -837,4 +843,4 @@ if __name__ == '__main__':
     print("🔗 Kompatybilność z InkStitch")
     print("📡 Serwer uruchamiany na porcie 5000...")
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
