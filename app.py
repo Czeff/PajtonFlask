@@ -33,34 +33,39 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def optimize_image_for_vectorization(image_path, max_size=MAX_IMAGE_SIZE):
-    """Optymalizuje obraz do wektoryzacji z zachowaniem jakości"""
+    """Optymalizuje obraz do wektoryzacji z zachowaniem jakości i ciągłości"""
     try:
         with Image.open(image_path) as img:
             # Konwersja do RGB
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            # Zachowaj proporcje przy skalowaniu
-            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            # Zachowaj proporcje przy skalowaniu - użyj większego rozmiaru
+            target_size = min(max_size * 1.2, 1000)  # Zwiększ rozmiar docelowy
+            img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
             
-            # Lekkie wygładzenie dla lepszej wektoryzacji
-            img = img.filter(ImageFilter.GaussianBlur(radius=0.3))
+            # Bardzo delikatne wygładzenie - mniej agresywne
+            img = img.filter(ImageFilter.GaussianBlur(radius=0.1))
             
-            # Zwiększ kontrast dla lepszego wykrywania krawędzi
+            # Delikatne zwiększenie kontrastu
             enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.3)
+            img = enhancer.enhance(1.15)
             
-            # Zwiększ nasycenie kolorów
+            # Delikatne zwiększenie nasycenia
             enhancer = ImageEnhance.Color(img)
-            img = enhancer.enhance(1.2)
+            img = enhancer.enhance(1.1)
+            
+            # Zwiększ ostrość dla lepszych krawędzi
+            enhancer = ImageEnhance.Sharpness(img)
+            img = enhancer.enhance(1.1)
             
             return img
     except Exception as e:
         print(f"Błąd podczas optymalizacji obrazu: {e}")
         return None
 
-def extract_dominant_colors_advanced(image, max_colors=8):
-    """Zaawansowane wyciąganie kolorów dominujących"""
+def extract_dominant_colors_advanced(image, max_colors=12):
+    """Zaawansowane wyciąganie kolorów dominujących z większą precyzją"""
     try:
         # Konwertuj do numpy array
         img_array = np.array(image)
@@ -71,23 +76,36 @@ def extract_dominant_colors_advanced(image, max_colors=8):
         # Reshape do 2D array
         pixels = img_array.reshape(-1, 3)
         
-        # Usuń duplikaty dla przyspieszenia
-        unique_pixels = np.unique(pixels, axis=0)
+        # Filtruj piksele o zbyt podobnych kolorach
+        unique_pixels = []
+        for pixel in pixels:
+            is_unique = True
+            for existing in unique_pixels:
+                if np.sqrt(np.sum((pixel - existing)**2)) < 15:  # Mniejsza tolerancja
+                    is_unique = False
+                    break
+            if is_unique:
+                unique_pixels.append(pixel)
+                if len(unique_pixels) > 15000:  # Więcej próbek
+                    break
         
-        if len(unique_pixels) > 10000:
-            # Próbkowanie losowe dla dużych obrazów
-            indices = np.random.choice(len(unique_pixels), 10000, replace=False)
-            unique_pixels = unique_pixels[indices]
+        unique_pixels = np.array(unique_pixels)
         
-        # K-means clustering
-        kmeans = KMeans(n_clusters=min(max_colors, len(unique_pixels)), random_state=42, n_init=10)
+        if len(unique_pixels) > 12000:
+            # Próbkowanie równomierne zamiast losowego
+            step = len(unique_pixels) // 12000
+            unique_pixels = unique_pixels[::step]
+        
+        # K-means clustering z większą liczbą iteracji
+        kmeans = KMeans(n_clusters=min(max_colors, len(unique_pixels)), 
+                       random_state=42, n_init=20, max_iter=500)
         kmeans.fit(unique_pixels)
         
         # Zwróć kolory jako tuple
         colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
         
-        # Sortuj kolory według jasności
-        colors.sort(key=lambda c: sum(c))
+        # Sortuj kolory według nasycenia i jasności
+        colors.sort(key=lambda c: (np.var([c[0], c[1], c[2]]), sum(c)))
         
         return colors
     except ImportError:
@@ -121,7 +139,7 @@ def extract_dominant_colors_simple(image, max_colors=8):
         return [(0, 0, 0), (128, 128, 128), (255, 255, 255)]
 
 def create_color_regions_advanced(image, colors):
-    """Zaawansowane tworzenie regionów kolorów"""
+    """Zaawansowane tworzenie regionów kolorów z lepszą ciągłością"""
     try:
         width, height = image.size
         img_array = np.array(image)
@@ -132,22 +150,50 @@ def create_color_regions_advanced(image, colors):
             # Utwórz maskę dla podobnych kolorów
             mask = np.zeros((height, width), dtype=bool)
             
-            # Oblicz odległość euklidesową w przestrzeni RGB
-            diff = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+            # Oblicz odległość w przestrzeni LAB dla lepszego dopasowania kolorów
+            try:
+                # Konwersja do LAB jeśli dostępna
+                from skimage.color import rgb2lab
+                img_lab = rgb2lab(img_array / 255.0)
+                color_lab = rgb2lab(np.array(color).reshape(1, 1, 3) / 255.0)[0, 0]
+                
+                # Odległość w przestrzeni LAB
+                diff = np.sqrt(np.sum((img_lab - color_lab)**2, axis=2))
+                threshold = 0.15  # Próg w przestrzeni LAB
+            except:
+                # Fallback do RGB
+                diff = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+                threshold = 35
             
-            # Adaptacyjny próg w zależności od koloru
-            threshold = 40 if sum(color) > 400 else 30
             mask = diff <= threshold
             
-            # Morfologia matematyczna do wygładzenia masek
+            # Bardziej zaawansowana morfologia matematyczna
             if np.any(mask):
-                # Usuń małe dziury
-                mask = ndimage.binary_fill_holes(mask)
-                # Wygładź krawędzie
-                mask = ndimage.binary_opening(mask, structure=np.ones((3,3)))
-                mask = ndimage.binary_closing(mask, structure=np.ones((5,5)))
+                # Użyj większych struktur do lepszego wypełniania
+                structure_small = np.ones((3, 3))
+                structure_medium = np.ones((7, 7))
+                structure_large = np.ones((11, 11))
                 
-                if np.sum(mask) > 50:  # Tylko regiony większe niż 50 pikseli
+                # Sekwencja operacji morfologicznych
+                mask = ndimage.binary_closing(mask, structure=structure_small, iterations=2)
+                mask = ndimage.binary_fill_holes(mask)
+                mask = ndimage.binary_opening(mask, structure=structure_small)
+                mask = ndimage.binary_closing(mask, structure=structure_medium)
+                mask = ndimage.binary_fill_holes(mask)
+                
+                # Dodatkowe wygładzenie dla większych regionów
+                if np.sum(mask) > 500:
+                    mask = ndimage.binary_opening(mask, structure=structure_medium)
+                    mask = ndimage.binary_closing(mask, structure=structure_large)
+                
+                # Filtracja małych regionów
+                labeled, num_features = ndimage.label(mask)
+                for i in range(1, num_features + 1):
+                    region_size = np.sum(labeled == i)
+                    if region_size < 100:  # Zwiększony próg
+                        mask[labeled == i] = False
+                
+                if np.sum(mask) > 100:
                     regions.append((color, mask))
         
         return regions
@@ -185,33 +231,85 @@ def create_color_regions_simple(image, colors):
         return []
 
 def trace_contours_advanced(mask):
-    """Zaawansowane śledzenie konturów"""
+    """Zaawansowane śledzenie konturów z gładszymi kształtami"""
     try:
-        # Użyj OpenCV lub skimage do znajdowania konturów
+        # Wygładź maskę przed śledzeniem konturów
+        from scipy import ndimage
+        smoothed_mask = ndimage.gaussian_filter(mask.astype(float), sigma=1.0) > 0.5
+        
         try:
             # Próba z OpenCV
-            mask_uint8 = (mask * 255).astype(np.uint8)
-            contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            mask_uint8 = (smoothed_mask * 255).astype(np.uint8)
+            
+            # Użyj różnych metod w zależności od rozmiaru maski
+            if np.sum(smoothed_mask) > 1000:
+                contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_L1)
+            else:
+                contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
             
             processed_contours = []
             for contour in contours:
-                if len(contour) >= 3:
-                    # Uprość kontur
-                    epsilon = 0.02 * cv2.arcLength(contour, True)
+                if len(contour) >= 6:  # Większy minimalny próg
+                    # Wygładź kontur
+                    contour = cv2.approxPolyDP(contour, 1.0, True)
+                    
+                    # Adaptacyjne upraszczanie w zależności od rozmiaru
+                    perimeter = cv2.arcLength(contour, True)
+                    if perimeter > 200:
+                        epsilon = 0.008 * perimeter  # Mniejszy epsilon dla większych konturów
+                    else:
+                        epsilon = 0.015 * perimeter
+                    
                     simplified = cv2.approxPolyDP(contour, epsilon, True)
                     
-                    if len(simplified) >= 3:
+                    if len(simplified) >= 4:  # Minimum 4 punkty dla zamkniętego kształtu
                         points = [(int(point[0][0]), int(point[0][1])) for point in simplified]
+                        
+                        # Dodatkowo wygładź punkty przy użyciu średniej ruchomej
+                        if len(points) > 6:
+                            smoothed_points = []
+                            for i in range(len(points)):
+                                prev_idx = (i - 1) % len(points)
+                                next_idx = (i + 1) % len(points)
+                                
+                                smooth_x = (points[prev_idx][0] + 2*points[i][0] + points[next_idx][0]) // 4
+                                smooth_y = (points[prev_idx][1] + 2*points[i][1] + points[next_idx][1]) // 4
+                                
+                                smoothed_points.append((smooth_x, smooth_y))
+                            points = smoothed_points
+                        
                         processed_contours.append(points)
             
             return processed_contours
             
         except ImportError:
-            # Fallback bez OpenCV
-            return trace_contours_simple(mask)
+            # Fallback bez OpenCV z lepszym algorytmem
+            return trace_contours_simple_improved(smoothed_mask)
             
     except Exception as e:
         print(f"Błąd podczas zaawansowanego śledzenia konturów: {e}")
+        return trace_contours_simple(mask)
+
+def trace_contours_simple_improved(mask):
+    """Ulepszona prosta metoda śledzenia konturów"""
+    try:
+        from skimage import measure
+        
+        # Użyj skimage do znajdowania konturów
+        contours = measure.find_contours(mask, 0.5)
+        
+        processed_contours = []
+        for contour in contours:
+            if len(contour) >= 6:
+                # Zmień kolejność współrzędnych (y,x) -> (x,y)
+                points = [(int(point[1]), int(point[0])) for point in contour[::2]]  # Co drugi punkt
+                
+                if len(points) >= 4:
+                    processed_contours.append(points)
+        
+        return processed_contours
+    except:
+        # Ostateczny fallback
         return trace_contours_simple(mask)
 
 def trace_contours_simple(mask):
@@ -248,42 +346,51 @@ def trace_contours_simple(mask):
         return []
 
 def create_smooth_svg_path(contour):
-    """Tworzy wysokiej jakości ścieżkę SVG z konturu"""
+    """Tworzy wysokiej jakości ścieżkę SVG z krzywymi Beziera"""
     if len(contour) < 3:
         return None
     
     try:
-        # Uprość kontur zachowując jakość
-        simplified_contour = []
-        tolerance = 2.0  # Mniejsza tolerancja dla lepszej jakości
+        # Nie upraszczaj zbyt agresywnie - zachowaj więcej punktów
+        if len(contour) > 50:
+            # Tylko dla bardzo dużych konturów
+            step = len(contour) // 40
+            simplified_contour = contour[::max(1, step)]
+        else:
+            simplified_contour = contour
         
-        for i in range(len(contour)):
-            current = contour[i]
-            if i == 0 or i == len(contour) - 1:
-                simplified_contour.append(current)
-            else:
-                prev = contour[i-1]
-                next_point = contour[i+1]
-                
-                # Oblicz odległość punktu od linii między poprzednim a następnym
-                dist = abs((next_point[1] - prev[1]) * current[0] - 
-                          (next_point[0] - prev[0]) * current[1] + 
-                          next_point[0] * prev[1] - next_point[1] * prev[0]) / \
-                       ((next_point[1] - prev[1])**2 + (next_point[0] - prev[0])**2)**0.5
-                
-                if dist > tolerance:
-                    simplified_contour.append(current)
-        
-        if len(simplified_contour) < 3:
+        if len(simplified_contour) < 4:
             simplified_contour = contour
         
         # Rozpocznij ścieżkę
-        path_data = f"M {simplified_contour[0][0]:.2f} {simplified_contour[0][1]:.2f}"
+        path_data = f"M {simplified_contour[0][0]:.1f} {simplified_contour[0][1]:.1f}"
         
-        # Dodaj linie z precyzją
-        for i in range(1, len(simplified_contour)):
-            current = simplified_contour[i]
-            path_data += f" L {current[0]:.2f} {current[1]:.2f}"
+        # Generuj krzywe Beziera dla gładszych kształtów
+        if len(simplified_contour) >= 6:
+            i = 1
+            while i < len(simplified_contour):
+                if i + 2 < len(simplified_contour):
+                    # Utwórz krzywą kwadratową Beziera
+                    p1 = simplified_contour[i]
+                    p2 = simplified_contour[i + 1]
+                    p3 = simplified_contour[i + 2] if i + 2 < len(simplified_contour) else simplified_contour[0]
+                    
+                    # Punkty kontrolne dla płynnej krzywej
+                    cp_x = p2[0]
+                    cp_y = p2[1]
+                    
+                    path_data += f" Q {cp_x:.1f} {cp_y:.1f} {p3[0]:.1f} {p3[1]:.1f}"
+                    i += 2
+                else:
+                    # Linia prosta dla pozostałych punktów
+                    current = simplified_contour[i]
+                    path_data += f" L {current[0]:.1f} {current[1]:.1f}"
+                    i += 1
+        else:
+            # Dla małych konturów użyj linii prostych
+            for i in range(1, len(simplified_contour)):
+                current = simplified_contour[i]
+                path_data += f" L {current[0]:.1f} {current[1]:.1f}"
         
         path_data += " Z"  # Zamknij ścieżkę
         return path_data
@@ -319,8 +426,8 @@ def vectorize_image_improved(image_path, output_path):
         
         print(f"✅ Obraz zoptymalizowany do rozmiaru: {optimized_image.size}")
         
-        # Wyciągnij dominujące kolory
-        colors = extract_dominant_colors_advanced(optimized_image, max_colors=8)
+        # Wyciągnij dominujące kolory - więcej kolorów dla lepszej dokładności
+        colors = extract_dominant_colors_advanced(optimized_image, max_colors=12)
         print(f"🎨 Znaleziono {len(colors)} kolorów dominujących")
         
         if not colors:
