@@ -80,44 +80,55 @@ def extract_dominant_colors_advanced(image, max_colors=12):
         # Reshape do 2D array
         pixels = img_array.reshape(-1, 3)
         
-        # Filtruj piksele o zbyt podobnych kolorach
-        unique_pixels = []
-        for pixel in pixels:
-            is_unique = True
-            for existing in unique_pixels:
-                if np.sqrt(np.sum((pixel - existing)**2)) < 15:  # Mniejsza tolerancja
-                    is_unique = False
-                    break
-            if is_unique:
-                unique_pixels.append(pixel)
-                if len(unique_pixels) > 15000:  # Więcej próbek
-                    break
+        # Próbkowanie pikseli - weź co 10 piksel dla lepszej wydajności
+        if len(pixels) > 50000:
+            step = len(pixels) // 20000
+            pixels = pixels[::step]
         
-        unique_pixels = np.array(unique_pixels)
+        # Usuń duplikaty kolorów
+        unique_pixels = np.unique(pixels, axis=0)
         
-        if len(unique_pixels) > 12000:
-            # Próbkowanie równomierne zamiast losowego
-            step = len(unique_pixels) // 12000
-            unique_pixels = unique_pixels[::step]
+        # Jeśli mamy za mało unikalnych kolorów, użyj wszystkich pikseli
+        if len(unique_pixels) < max_colors:
+            print(f"Za mało unikalnych kolorów ({len(unique_pixels)}), używam prostszej metody")
+            return extract_dominant_colors_simple(image, max_colors)
         
-        # K-means clustering z większą liczbą iteracji
-        kmeans = KMeans(n_clusters=min(max_colors, len(unique_pixels)), 
-                       random_state=42, n_init=20, max_iter=500)
+        # K-means clustering
+        n_clusters = min(max_colors, len(unique_pixels))
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10, max_iter=300)
         kmeans.fit(unique_pixels)
         
         # Zwróć kolory jako tuple
         colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
         
-        # Sortuj kolory według nasycenia i jasności
-        colors.sort(key=lambda c: (np.var([c[0], c[1], c[2]]), sum(c)))
+        # Filtruj kolory zbyt podobne do siebie
+        filtered_colors = []
+        for color in colors:
+            is_unique = True
+            for existing in filtered_colors:
+                # Zwiększona tolerancja dla różnych kolorów
+                color_diff = np.sqrt(sum((color[i] - existing[i])**2 for i in range(3)))
+                if color_diff < 30:
+                    is_unique = False
+                    break
+            if is_unique:
+                filtered_colors.append(color)
         
-        return colors
+        # Upewnij się, że mamy przynajmniej 3 kolory
+        if len(filtered_colors) < 3:
+            print("Za mało różnych kolorów, dodaję podstawowe")
+            filtered_colors.extend([(0, 0, 0), (128, 128, 128), (255, 255, 255)])
+            filtered_colors = list(set(filtered_colors))[:max_colors]
+        
+        print(f"Znaleziono {len(filtered_colors)} kolorów dominujących")
+        return filtered_colors
+        
     except ImportError:
-        # Fallback - prostsza metoda bez sklearn
+        print("Sklearn niedostępne, używam prostszej metody")
         return extract_dominant_colors_simple(image, max_colors)
     except Exception as e:
         print(f"Błąd podczas wyciągania kolorów: {e}")
-        return [(0, 0, 0), (128, 128, 128), (255, 255, 255)]
+        return extract_dominant_colors_simple(image, max_colors)
 
 def extract_dominant_colors_simple(image, max_colors=8):
     """Prosta metoda wyciągania kolorów dominujących"""
@@ -151,56 +162,67 @@ def create_color_regions_advanced(image, colors):
         regions = []
         
         for color in colors:
-            # Utwórz maskę dla podobnych kolorów
+            print(f"Przetwarzanie koloru: {color}")
+            
+            # Utwórz maskę dla podobnych kolorów - zwiększona tolerancja
             mask = np.zeros((height, width), dtype=bool)
             
-            # Oblicz odległość w przestrzeni LAB dla lepszego dopasowania kolorów
-            try:
-                # Konwersja do LAB jeśli dostępna
-                from skimage.color import rgb2lab
-                img_lab = rgb2lab(img_array / 255.0)
-                color_lab = rgb2lab(np.array(color).reshape(1, 1, 3) / 255.0)[0, 0]
-                
-                # Odległość w przestrzeni LAB
-                diff = np.sqrt(np.sum((img_lab - color_lab)**2, axis=2))
-                threshold = 0.15  # Próg w przestrzeni LAB
-            except:
-                # Fallback do RGB
-                diff = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
-                threshold = 35
+            # Oblicz odległość kolorów w RGB - zwiększona tolerancja
+            color_array = np.array(color)
+            diff = np.sqrt(np.sum((img_array - color_array)**2, axis=2))
+            
+            # Adaptacyjny próg w zależności od koloru
+            brightness = np.mean(color)
+            if brightness < 50:  # Ciemne kolory
+                threshold = 60
+            elif brightness > 200:  # Jasne kolory  
+                threshold = 80
+            else:  # Średnie kolory
+                threshold = 50
             
             mask = diff <= threshold
             
-            # Bardziej zaawansowana morfologia matematyczna
-            if np.any(mask):
-                # Użyj większych struktur do lepszego wypełniania
+            # Sprawdź czy maska ma jakiekolwiek piksele
+            initial_pixels = np.sum(mask)
+            print(f"Początkowe piksele dla koloru {color}: {initial_pixels}")
+            
+            if initial_pixels > 0:
+                # Delikatniejsze operacje morfologiczne
+                from scipy import ndimage
+                
+                # Podstawowe czyszczenie
                 structure_small = np.ones((3, 3))
-                structure_medium = np.ones((7, 7))
-                structure_large = np.ones((11, 11))
-                
-                # Sekwencja operacji morfologicznych
-                mask = ndimage.binary_closing(mask, structure=structure_small, iterations=2)
-                mask = ndimage.binary_fill_holes(mask)
-                mask = ndimage.binary_opening(mask, structure=structure_small)
-                mask = ndimage.binary_closing(mask, structure=structure_medium)
+                mask = ndimage.binary_closing(mask, structure=structure_small, iterations=1)
                 mask = ndimage.binary_fill_holes(mask)
                 
-                # Dodatkowe wygładzenie dla większych regionów
-                if np.sum(mask) > 500:
-                    mask = ndimage.binary_opening(mask, structure=structure_medium)
-                    mask = ndimage.binary_closing(mask, structure=structure_large)
-                
-                # Filtracja małych regionów
+                # Tylko jeśli region jest wystarczająco duży
+                if np.sum(mask) > 200:
+                    mask = ndimage.binary_opening(mask, structure=structure_small)
+                    
+                # Usuń bardzo małe komponenty
                 labeled, num_features = ndimage.label(mask)
+                min_region_size = max(50, initial_pixels // 20)  # Adaptacyjny minimalny rozmiar
+                
                 for i in range(1, num_features + 1):
                     region_size = np.sum(labeled == i)
-                    if region_size < 100:  # Zwiększony próg
+                    if region_size < min_region_size:
                         mask[labeled == i] = False
                 
-                if np.sum(mask) > 100:
+                final_pixels = np.sum(mask)
+                print(f"Finalne piksele dla koloru {color}: {final_pixels}")
+                
+                # Bardziej liberalne kryterium dodawania regionu
+                if final_pixels > 25:  # Zmniejszony próg
                     regions.append((color, mask))
+                    print(f"✓ Dodano region dla koloru {color}")
+                else:
+                    print(f"✗ Region dla koloru {color} za mały ({final_pixels} pikseli)")
+            else:
+                print(f"✗ Brak pikseli dla koloru {color}")
         
+        print(f"Łącznie utworzono {len(regions)} regionów")
         return regions
+        
     except Exception as e:
         print(f"Błąd podczas tworzenia regionów: {e}")
         return create_color_regions_simple(image, colors)
@@ -209,27 +231,31 @@ def create_color_regions_simple(image, colors):
     """Prosta metoda tworzenia regionów kolorów"""
     try:
         width, height = image.size
-        pixels = np.array(image)
+        img_array = np.array(image)
         
         regions = []
         
         for color in colors:
-            mask = np.zeros((height, width), dtype=bool)
+            print(f"Prosta metoda - przetwarzanie koloru: {color}")
             
-            # Znajdź piksele podobne do tego koloru
-            tolerance = 35
-            for y in range(height):
-                for x in range(width):
-                    pixel = pixels[y, x]
-                    if (abs(int(pixel[0]) - color[0]) <= tolerance and
-                        abs(int(pixel[1]) - color[1]) <= tolerance and
-                        abs(int(pixel[2]) - color[2]) <= tolerance):
-                        mask[y, x] = True
+            # Zwiększona tolerancja dla prostej metody
+            tolerance = 60
             
-            if np.any(mask):
+            # Wektoryzowana operacja zamiast pętli
+            color_array = np.array(color)
+            diff = np.abs(img_array - color_array)
+            mask = np.all(diff <= tolerance, axis=2)
+            
+            pixel_count = np.sum(mask)
+            print(f"Prosta metoda - piksele dla koloru {color}: {pixel_count}")
+            
+            if pixel_count > 10:  # Bardzo liberalny próg
                 regions.append((color, mask))
+                print(f"✓ Prosta metoda - dodano region dla koloru {color}")
         
+        print(f"Prosta metoda - utworzono {len(regions)} regionów")
         return regions
+        
     except Exception as e:
         print(f"Błąd podczas prostego tworzenia regionów: {e}")
         return []
@@ -445,7 +471,12 @@ def vectorize_image_improved(image_path, output_path):
         print(f"🗺️ Utworzono {len(regions)} regionów kolorowych")
         
         if not regions:
-            print("❌ Nie utworzono regionów")
+            print("⚠️ Nie utworzono regionów zaawansowaną metodą, próbuję prostszą")
+            regions = create_color_regions_simple(optimized_image, colors)
+            print(f"🗺️ Prostą metodą utworzono {len(regions)} regionów")
+            
+        if not regions:
+            print("❌ Nie można utworzyć żadnych regionów kolorowych")
             return False
         
         # Generuj ścieżki SVG
