@@ -157,7 +157,7 @@ def enhance_photo_for_vector(img):
     
     return img
 
-def extract_dominant_colors_advanced(image, max_colors=30):
+def extract_dominant_colors_advanced(image, max_colors=50):
     """Ultra precyzyjna analiza kolorów z zachowaniem detali oryginalnego obrazu"""
     try:
         img_array = np.array(image)
@@ -174,10 +174,18 @@ def extract_dominant_colors_advanced(image, max_colors=30):
         colors.extend(edge_colors)
         
         # 3. Analiza kolorów gradientów i przejść
-        gradient_colors = extract_gradient_colors(img_array, max_colors // 3)
+        gradient_colors = extract_gradient_colors(img_array, max_colors // 5)
         colors.extend(gradient_colors)
         
-        # 4. K-means clustering z wyższą precyzją
+        # 4. Wykrywanie kolorów szczegółów
+        detail_colors = extract_detail_colors(img_array, max_colors // 5)
+        colors.extend(detail_colors)
+        
+        # 5. Wykrywanie kolorów tekstur
+        texture_colors = extract_texture_colors(img_array, max_colors // 5)
+        colors.extend(texture_colors)
+        
+        # 6. K-means clustering z wyższą precyzją
         if len(colors) < max_colors:
             additional_colors = extract_high_precision_kmeans(img_array, max_colors - len(colors))
             colors.extend(additional_colors)
@@ -283,6 +291,68 @@ def extract_gradient_colors(img_array, max_colors):
     except:
         return []
 
+def extract_detail_colors(img_array, max_colors):
+    """Wyciąga kolory z małych szczegółów i tekstur"""
+    try:
+        from sklearn.cluster import KMeans
+        from scipy import ndimage
+        
+        # Wykryj małe obiekty i detale
+        gray = np.mean(img_array, axis=2)
+        
+        # Filtr Laplace'a do wykrywania szczegółów
+        laplacian = ndimage.laplace(gray)
+        detail_mask = np.abs(laplacian) > np.percentile(np.abs(laplacian), 85)
+        
+        # Rozszerz obszary szczegółów
+        detail_mask = ndimage.binary_dilation(detail_mask, iterations=1)
+        
+        # Wyciągnij kolory z obszarów szczegółów
+        detail_pixels = img_array[detail_mask]
+        
+        if len(detail_pixels) > 100:
+            # Używaj większej liczby klastrów dla szczegółów
+            n_clusters = min(max_colors, max(5, len(detail_pixels) // 50))
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=20)
+            kmeans.fit(detail_pixels)
+            return [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        
+        return []
+    except:
+        return []
+
+def extract_texture_colors(img_array, max_colors):
+    """Wyciąga kolory z obszarów z teksturą"""
+    try:
+        from sklearn.cluster import KMeans
+        from scipy import ndimage
+        
+        # Zastosuj filtry teksturowe
+        gray = np.mean(img_array, axis=2)
+        
+        # Filtr Gabora (uproszczony) - wykrywa tekstury
+        gx = ndimage.sobel(gray, axis=0)
+        gy = ndimage.sobel(gray, axis=1)
+        texture_response = np.sqrt(gx**2 + gy**2)
+        
+        # Znajdź obszary z wysoką odpowiedzią teksturową
+        texture_threshold = np.percentile(texture_response, 75)
+        texture_mask = texture_response > texture_threshold
+        
+        # Wyciągnij kolory z obszarów teksturowych
+        texture_pixels = img_array[texture_mask]
+        
+        if len(texture_pixels) > 200:
+            n_clusters = min(max_colors, len(texture_pixels) // 100)
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+                kmeans.fit(texture_pixels)
+                return [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        
+        return []
+    except:
+        return []
+
 def extract_high_precision_kmeans(img_array, max_colors):
     """K-means z wysoką precyzją"""
     try:
@@ -330,11 +400,11 @@ def remove_similar_colors_precise(colors, max_colors):
             # Adaptacyjny próg w zależności od jasności
             brightness = sum(existing) / 3
             if brightness < 30:
-                tolerance = 8  # Bardzo małe różnice dla ciemnych kolorów
+                tolerance = 12  # Zwiększona tolerancja dla ciemnych kolorów
             elif brightness > 220:
-                tolerance = 12  # Małe różnice dla jasnych kolorów
+                tolerance = 18  # Zwiększona tolerancja dla jasnych kolorów
             else:
-                tolerance = 10
+                tolerance = 15  # Zwiększona tolerancja dla średnich kolorów
             
             if distance < tolerance:
                 is_unique = False
@@ -576,7 +646,7 @@ def create_color_regions_advanced(image, colors):
             initial_pixels = np.sum(mask)
             print(f"  📊 Początkowe piksele: {initial_pixels}")
             
-            if initial_pixels > 5:  # Jeszcze niższy próg dla większej precyzji
+            if initial_pixels > 3:  # Bardzo niski próg dla zachowania szczegółów
                 # Zachowanie szczegółów z minimalnymi przekształceniami
                 mask = preserve_detail_processing(mask, initial_pixels)
                 
@@ -631,7 +701,7 @@ def create_ultra_precise_mask(img_array, color, segments):
         
         # Adaptacyjny próg bazujący na analizie histogramu
         hist, bins = np.histogram(rgb_diff, bins=50)
-        threshold_percentile = 15  # Bardzo precyzyjny próg
+        threshold_percentile = 20  # Nieco wyższy próg dla lepszego pokrycia
         threshold = np.percentile(rgb_diff, threshold_percentile)
         mask1 = rgb_diff <= threshold
         masks.append(mask1)
@@ -1915,6 +1985,52 @@ def create_simple_svg_path(contour):
     
     return path_data
 
+def analyze_image_complexity(image):
+    """Analizuje złożoność obrazu i dostosowuje parametry"""
+    try:
+        img_array = np.array(image)
+        
+        # Oblicz wskaźniki złożoności
+        edge_density = detect_edge_density(img_array)
+        color_complexity = detect_color_complexity(img_array)
+        
+        # Oblicz entropię obrazu
+        from scipy.stats import entropy
+        hist, _ = np.histogram(img_array.flatten(), bins=256, range=(0, 256))
+        img_entropy = entropy(hist + 1e-10)  # Dodaj małą wartość aby uniknąć log(0)
+        
+        print(f"📊 Analiza złożoności: krawędzie={edge_density:.3f}, kolory={color_complexity}, entropia={img_entropy:.3f}")
+        
+        # Dostosuj parametry w zależności od złożoności
+        if edge_density > 0.15 and color_complexity > 200:
+            return {
+                'max_colors': 60,
+                'tolerance_factor': 1.2,
+                'detail_preservation': 'high',
+                'min_region_size': 2
+            }
+        elif edge_density > 0.1 or color_complexity > 150:
+            return {
+                'max_colors': 45,
+                'tolerance_factor': 1.1,
+                'detail_preservation': 'medium',
+                'min_region_size': 3
+            }
+        else:
+            return {
+                'max_colors': 30,
+                'tolerance_factor': 1.0,
+                'detail_preservation': 'normal',
+                'min_region_size': 5
+            }
+    except:
+        return {
+            'max_colors': 40,
+            'tolerance_factor': 1.0,
+            'detail_preservation': 'medium',
+            'min_region_size': 3
+        }
+
 def vectorize_image_improved(image_path, output_path):
     """Ultra zaawansowana wektoryzacja z AI-podobną analizą obrazu"""
     try:
@@ -1928,9 +2044,13 @@ def vectorize_image_improved(image_path, output_path):
         
         print(f"✅ Obraz zoptymalizowany do rozmiaru: {optimized_image.size}")
         
+        # Analizuj złożoność obrazu
+        complexity_params = analyze_image_complexity(optimized_image)
+        
         # Ultra zaawansowane wyciąganie kolorów z analizą LAB i histogramów
-        colors = extract_dominant_colors_advanced(optimized_image, max_colors=24)
-        print(f"🎨 Znaleziono {len(colors)} kolorów ultra wysokiej jakości")
+        max_colors = complexity_params['max_colors']
+        colors = extract_dominant_colors_advanced(optimized_image, max_colors=max_colors)
+        print(f"🎨 Znaleziono {len(colors)} kolorów ultra wysokiej jakości (dostosowano do złożoności: {max_colors})")
         
         if not colors:
             print("❌ Nie znaleziono kolorów")
