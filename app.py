@@ -25,7 +25,7 @@ app = Flask(__name__)
 # Konfiguracja
 UPLOAD_FOLDER = 'uploads'
 MAX_FILE_SIZE = 8 * 1024 * 1024  # 8MB
-MAX_IMAGE_SIZE = 600  # Zmniejszono dla lepszej kontroli jakości przy zachowaniu detali
+MAX_IMAGE_SIZE = 800  # Zwiększono dla jeszcze wyższej jakości detali
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'svg'}
 
 # Upewnij się, że katalogi istnieją
@@ -240,27 +240,35 @@ def flatten_color_palette(colors, target_count=16):
         return colors[:target_count]
 
 def enhance_image_quality_maximum(image):
-    """Maksymalne podniesienie jakości obrazu dla cartoon-style"""
+    """Maksymalne podniesienie jakości obrazu dla cartoon-style z jeszcze wyższą precyzją"""
     try:
-        # Multi-pass enhancement z zachowaniem szczegółów
+        # Ultra multi-pass enhancement z maksymalnym zachowaniem szczegółów
         
-        # Pass 1: Delikatne zwiększenie kontrastu z zachowaniem detali
+        # Pass 1: Precyzyjne zwiększenie kontrastu z zachowaniem detali
         enhancer = ImageEnhance.Contrast(image)
-        enhanced = enhancer.enhance(1.15)
+        enhanced = enhancer.enhance(1.25)
         
-        # Pass 2: Precyzyjne wyostrzenie krawędzi bez artefaktów
-        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=0.2, percent=100, threshold=1))
+        # Pass 2: Zaawansowane wyostrzenie krawędzi wielopoziomowe
+        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=0.3, percent=120, threshold=1))
+        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=0.8, percent=80, threshold=2))
         
         # Pass 3: Zwiększenie nasycenia dla lepszego wykrywania kolorów
         enhancer = ImageEnhance.Color(enhanced)
-        enhanced = enhancer.enhance(1.08)
+        enhanced = enhancer.enhance(1.15)
         
-        # Pass 4: Bardzo delikatna redukcja szumu
-        enhanced = enhanced.filter(ImageFilter.SMOOTH_MORE)
+        # Pass 4: Selektywna redukcja szumu z zachowaniem krawędzi
+        enhanced = enhanced.filter(ImageFilter.SMOOTH)
         
-        # Pass 5: Finalne subtelne wyostrzenie
+        # Pass 5: Multi-level wyostrzenie
         enhancer = ImageEnhance.Sharpness(enhanced)
-        enhanced = enhancer.enhance(1.1)
+        enhanced = enhancer.enhance(1.3)
+        
+        # Pass 6: Finalne zwiększenie jasności dla lepszego kontrastu
+        enhancer = ImageEnhance.Brightness(enhanced)
+        enhanced = enhancer.enhance(1.05)
+        
+        # Pass 7: Końcowe precyzyjne wyostrzenie detali
+        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=0.1, percent=50, threshold=0))
         
         return enhanced
     except Exception as e:
@@ -533,21 +541,21 @@ def remove_similar_colors_ultra_precise(colors, max_colors, tolerance_factor=0.8
             brightness = sum(existing) / 3
             saturation = max(existing) - min(existing)
             
-            # Bazowe progi tolerancji - jeszcze bardziej zmniejszone
+            # Najwyższa precyzja progów tolerancji
             if brightness < 30:  # Bardzo ciemne kolory
-                base_tolerance = 2.5
+                base_tolerance = 1.5
             elif brightness < 60:  # Ciemne kolory
-                base_tolerance = 3.0
+                base_tolerance = 2.0
             elif brightness < 120:  # Średnio ciemne
-                base_tolerance = 3.5
+                base_tolerance = 2.5
             elif brightness > 230:  # Bardzo jasne kolory
-                base_tolerance = 6.0
-            elif brightness > 200:  # Jasne kolory
-                base_tolerance = 4.5
-            elif brightness > 160:  # Średnio jasne
                 base_tolerance = 4.0
-            else:  # Średnie kolory
+            elif brightness > 200:  # Jasne kolory
+                base_tolerance = 3.5
+            elif brightness > 160:  # Średnio jasne
                 base_tolerance = 3.0
+            else:  # Średnie kolory
+                base_tolerance = 2.5
             
             # Zastosuj czynnik tolerancji
             tolerance = base_tolerance * tolerance_factor
@@ -2822,8 +2830,8 @@ def analyze_image_complexity(image):
         # ale zwiększamy precyzję wykrywania i zachowania detali
         if edge_density > 0.12 and color_complexity > 150:
             return {
-                'max_colors': 16,  # Ograniczono do 16 kolorów
-                'tolerance_factor': 0.7,  # Jeszcze większa precyzja
+                'max_colors': 24,  # Zwiększono do 24 kolorów dla złożonych obrazów
+                'tolerance_factor': 0.6,  # Jeszcze większa precyzja
                 'detail_preservation': 'ultra_high',
                 'min_region_size': 1,  # Zachowaj najmniejsze detale
                 'color_flattening': True,  # Włącz spłaszczanie kolorów
@@ -2831,8 +2839,8 @@ def analyze_image_complexity(image):
             }
         elif edge_density > 0.08 or color_complexity > 100:
             return {
-                'max_colors': 14,  # Średnio-złożone: 14 kolorów
-                'tolerance_factor': 0.75,
+                'max_colors': 20,  # Zwiększono do 20 kolorów
+                'tolerance_factor': 0.65,
                 'detail_preservation': 'very_high',
                 'min_region_size': 1,
                 'color_flattening': True,
@@ -2840,19 +2848,19 @@ def analyze_image_complexity(image):
             }
         elif color_complexity > 50:
             return {
-                'max_colors': 12,  # Prosta grafika: 12 kolorów
-                'tolerance_factor': 0.8,
+                'max_colors': 16,  # Zwiększono do 16 kolorów
+                'tolerance_factor': 0.7,
                 'detail_preservation': 'high',
-                'min_region_size': 2,
+                'min_region_size': 1,
                 'color_flattening': True,
                 'quality_enhancement': 'medium'
             }
         else:
             return {
-                'max_colors': 10,  # Bardzo prosta: 10 kolorów
-                'tolerance_factor': 0.85,
+                'max_colors': 12,  # Zwiększono do 12 kolorów
+                'tolerance_factor': 0.75,
                 'detail_preservation': 'medium',
-                'min_region_size': 3,
+                'min_region_size': 2,
                 'color_flattening': True,
                 'quality_enhancement': 'standard'
             }
