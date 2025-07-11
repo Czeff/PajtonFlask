@@ -158,49 +158,49 @@ def enhance_photo_for_vector(img):
     return img
 
 def extract_dominant_colors_advanced(image, max_colors=50):
-    """Ultra precyzyjna analiza kolorów z zachowaniem detali oryginalnego obrazu"""
+    """Ultra precyzyjna analiza kolorów z perfekcyjnym dopasowaniem cartoon-style"""
     try:
         img_array = np.array(image)
         
         # Wielopoziomowa analiza kolorów
         colors = []
         
-        # 1. Precyzyjne wykrywanie kolorów dominujących
-        dominant_colors = extract_precise_dominant_colors(img_array, max_colors // 3)
+        # 1. Precyzyjne wykrywanie kolorów dominujących z większą liczbą klastrów
+        dominant_colors = extract_precise_dominant_colors(img_array, max_colors // 2)
         colors.extend(dominant_colors)
         
-        # 2. Analiza kolorów krawędzi (ważne dla cartoon-style)
-        edge_colors = extract_edge_based_colors(img_array, max_colors // 3)
+        # 2. Analiza kolorów krawędzi (kluczowe dla cartoon-style)
+        edge_colors = extract_edge_based_colors(img_array, max_colors // 4)
         colors.extend(edge_colors)
         
-        # 3. Analiza kolorów gradientów i przejść
-        gradient_colors = extract_gradient_colors(img_array, max_colors // 5)
+        # 3. Analiza kolorów przejść i gradientów
+        gradient_colors = extract_gradient_colors(img_array, max_colors // 6)
         colors.extend(gradient_colors)
         
-        # 4. Wykrywanie kolorów szczegółów
-        detail_colors = extract_detail_colors(img_array, max_colors // 5)
+        # 4. Wykrywanie kolorów małych obszarów
+        detail_colors = extract_detail_colors(img_array, max_colors // 6)
         colors.extend(detail_colors)
         
-        # 5. Wykrywanie kolorów tekstur
-        texture_colors = extract_texture_colors(img_array, max_colors // 5)
-        colors.extend(texture_colors)
+        # 5. Wykrywanie kolorów cieni i rozjaśnień
+        shadow_highlight_colors = extract_shadow_highlight_colors(img_array, max_colors // 8)
+        colors.extend(shadow_highlight_colors)
         
-        # 6. K-means clustering z wyższą precyzją
+        # 6. K-means clustering z najwyższą precyzją
         if len(colors) < max_colors:
             additional_colors = extract_high_precision_kmeans(img_array, max_colors - len(colors))
             colors.extend(additional_colors)
         
-        # Usuwanie duplikatów z precyzyjną tolerancją
-        final_colors = remove_similar_colors_precise(colors, max_colors)
+        # Usuwanie duplikatów z perfekcyjną tolerancją
+        final_colors = remove_similar_colors_ultra_precise(colors, max_colors)
         
-        # Sortowanie według ważności w obrazie
-        final_colors = sort_colors_by_importance(img_array, final_colors)
+        # Sortowanie według ważności wizualnej w obrazie
+        final_colors = sort_colors_by_visual_importance(img_array, final_colors)
         
-        print(f"🎨 Ultra precyzyjna analiza: {len(final_colors)} kolorów z zachowaniem szczegółów")
+        print(f"🎨 Perfekcyjna analiza: {len(final_colors)} kolorów z maksymalną precyzją")
         return final_colors
         
     except Exception as e:
-        print(f"Błąd podczas ultra precyzyjnej analizy kolorów: {e}")
+        print(f"Błąd podczas perfekcyjnej analizy kolorów: {e}")
         return extract_dominant_colors_simple(image, max_colors)
 
 def extract_precise_dominant_colors(img_array, max_colors):
@@ -352,6 +352,193 @@ def extract_texture_colors(img_array, max_colors):
         return []
     except:
         return []
+
+def extract_shadow_highlight_colors(img_array, max_colors):
+    """Wyciąga kolory cieni i rozjaśnień - kluczowe dla cartoon-style"""
+    try:
+        from sklearn.cluster import KMeans
+        
+        # Oblicz jasność każdego piksela
+        brightness = np.mean(img_array, axis=2)
+        
+        # Znajdź bardzo ciemne obszary (cienie)
+        shadow_threshold = np.percentile(brightness, 15)
+        shadow_mask = brightness <= shadow_threshold
+        
+        # Znajdź bardzo jasne obszary (rozjaśnienia)
+        highlight_threshold = np.percentile(brightness, 85)
+        highlight_mask = brightness >= highlight_threshold
+        
+        colors = []
+        
+        # Wyciągnij kolory cieni
+        shadow_pixels = img_array[shadow_mask]
+        if len(shadow_pixels) > 100:
+            n_clusters = min(max_colors // 2, len(shadow_pixels) // 200)
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+                kmeans.fit(shadow_pixels)
+                shadow_colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+                colors.extend(shadow_colors)
+        
+        # Wyciągnij kolory rozjaśnień
+        highlight_pixels = img_array[highlight_mask]
+        if len(highlight_pixels) > 100:
+            n_clusters = min(max_colors // 2, len(highlight_pixels) // 200)
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+                kmeans.fit(highlight_pixels)
+                highlight_colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+                colors.extend(highlight_colors)
+        
+        return colors[:max_colors]
+    except:
+        return []
+
+def remove_similar_colors_ultra_precise(colors, max_colors):
+    """Ultra precyzyjne usuwanie podobnych kolorów z adaptacyjnym progiem"""
+    if not colors:
+        return []
+    
+    final_colors = [colors[0]]
+    
+    for color in colors[1:]:
+        is_unique = True
+        
+        for existing in final_colors:
+            # Zaawansowane obliczanie różnicy kolorów w przestrzeni LAB
+            distance = calculate_advanced_color_distance(color, existing)
+            
+            # Bardzo precyzyjny adaptacyjny próg
+            brightness = sum(existing) / 3
+            saturation = max(existing) - min(existing)
+            
+            if brightness < 40:  # Bardzo ciemne kolory
+                tolerance = 8
+            elif brightness < 80:  # Ciemne kolory
+                tolerance = 10
+            elif brightness > 220:  # Bardzo jasne kolory
+                tolerance = 15
+            elif brightness > 180:  # Jasne kolory
+                tolerance = 12
+            else:  # Średnie kolory
+                tolerance = 10
+                
+            # Dodatkowa tolerancja dla wysoko nasyconych kolorów
+            if saturation > 100:
+                tolerance += 3
+            
+            if distance < tolerance:
+                is_unique = False
+                break
+        
+        if is_unique and len(final_colors) < max_colors:
+            final_colors.append(color)
+    
+    return final_colors
+
+def calculate_advanced_color_distance(color1, color2):
+    """Zaawansowane obliczanie odległości kolorów z Delta E 2000"""
+    try:
+        from skimage.color import rgb2lab, deltaE_cie76
+        
+        # Konwersja do przestrzeni LAB
+        c1_lab = rgb2lab(np.array(color1).reshape(1, 1, 3) / 255.0)[0, 0]
+        c2_lab = rgb2lab(np.array(color2).reshape(1, 1, 3) / 255.0)[0, 0]
+        
+        # Delta E CIE76 - bardziej precyzyjna miara różnicy kolorów
+        delta_e = np.sqrt(
+            (c1_lab[0] - c2_lab[0])**2 + 
+            (c1_lab[1] - c2_lab[1])**2 + 
+            (c1_lab[2] - c2_lab[2])**2
+        )
+        return delta_e
+    except:
+        # Fallback do ulepszonej Euclidean distance z wagami
+        r_diff = (color1[0] - color2[0]) * 0.299
+        g_diff = (color1[1] - color2[1]) * 0.587
+        b_diff = (color1[2] - color2[2]) * 0.114
+        return np.sqrt(r_diff**2 + g_diff**2 + b_diff**2)
+
+def sort_colors_by_visual_importance(img_array, colors):
+    """Sortuje kolory według wizualnej ważności w obrazie"""
+    try:
+        color_importance = []
+        height, width = img_array.shape[:2]
+        
+        for color in colors:
+            # Oblicz częstotliwość i pozycję
+            distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+            frequency = np.sum(distances < 25)
+            
+            if frequency > 0:
+                # Znajdź pozycje pikseli tego koloru
+                y_coords, x_coords = np.where(distances < 25)
+                
+                # Centralność (środek obrazu jest ważniejszy)
+                center_distance = np.mean(np.sqrt(
+                    ((y_coords - height/2) / height)**2 + 
+                    ((x_coords - width/2) / width)**2
+                ))
+                centrality_weight = 1.0 - center_distance
+                
+                # Rozłożenie (bardziej rozproszone kolory są ważniejsze)
+                if len(y_coords) > 1:
+                    spread = np.std(y_coords) + np.std(x_coords)
+                    spread_weight = min(1.0, spread / (height + width) * 4)
+                else:
+                    spread_weight = 0
+                
+                # Kontrast (kolory kontrastujące z otoczeniem są ważniejsze)
+                contrast_weight = calculate_local_contrast(img_array, color, y_coords, x_coords)
+                
+                # Kombinuj wszystkie czynniki
+                importance = (
+                    frequency * 0.4 +  # Częstotliwość
+                    frequency * centrality_weight * 0.3 +  # Centralność
+                    frequency * spread_weight * 0.2 +  # Rozłożenie
+                    frequency * contrast_weight * 0.1  # Kontrast
+                )
+            else:
+                importance = 0
+            
+            color_importance.append((importance, color))
+        
+        # Sortuj według ważności (malejąco)
+        color_importance.sort(reverse=True)
+        return [color for importance, color in color_importance]
+    except:
+        return colors
+
+def calculate_local_contrast(img_array, color, y_coords, x_coords):
+    """Oblicza lokalny kontrast koloru z otoczeniem"""
+    try:
+        if len(y_coords) == 0:
+            return 0
+        
+        color_array = np.array(color)
+        contrasts = []
+        
+        # Sprawdź kontrast w losowych punktach
+        sample_size = min(100, len(y_coords))
+        indices = np.random.choice(len(y_coords), sample_size, replace=False)
+        
+        for idx in indices:
+            y, x = y_coords[idx], x_coords[idx]
+            
+            # Sprawdź otoczenie 5x5
+            y_start, y_end = max(0, y-2), min(img_array.shape[0], y+3)
+            x_start, x_end = max(0, x-2), min(img_array.shape[1], x+3)
+            
+            neighborhood = img_array[y_start:y_end, x_start:x_end]
+            if neighborhood.size > 0:
+                avg_neighbor_color = np.mean(neighborhood.reshape(-1, 3), axis=0)
+                contrast = np.sqrt(np.sum((color_array - avg_neighbor_color)**2))
+                contrasts.append(contrast)
+        
+        return np.mean(contrasts) / 255.0 if contrasts else 0
+    except:
+        return 0
 
 def extract_high_precision_kmeans(img_array, max_colors):
     """K-means z wysoką precyzją"""
@@ -688,67 +875,231 @@ def create_edge_preserving_segmentation(img_array):
         return None
 
 def create_ultra_precise_mask(img_array, color, segments):
-    """Tworzy ultra precyzyjną maskę koloru"""
+    """Tworzy perfekcyjną maskę koloru dla cartoon-style"""
     try:
         height, width = img_array.shape[:2]
         color_array = np.array(color)
         
-        # Multi-metodowa precyzyjna detekcja
+        # Multi-metodowa ultra precyzyjna detekcja
         masks = []
         
-        # 1. Bardzo precyzyjna odległość RGB
+        # 1. Najbardziej precyzyjna odległość RGB z adaptacyjnym progiem
         rgb_diff = np.sqrt(np.sum((img_array - color_array)**2, axis=2))
         
-        # Adaptacyjny próg bazujący na analizie histogramu
-        hist, bins = np.histogram(rgb_diff, bins=50)
-        threshold_percentile = 20  # Nieco wyższy próg dla lepszego pokrycia
-        threshold = np.percentile(rgb_diff, threshold_percentile)
+        # Inteligentny adaptacyjny próg bazujący na rozkładzie kolorów
+        hist, bins = np.histogram(rgb_diff, bins=100)
+        
+        # Znajdź pierwszy znaczący spadek w histogramie
+        cumsum = np.cumsum(hist)
+        total_pixels = cumsum[-1]
+        
+        # Użyj bardziej precyzyjnego progu
+        for i, cum_count in enumerate(cumsum):
+            if cum_count > total_pixels * 0.15:  # 15% najbliższych pikseli
+                threshold = bins[i]
+                break
+        else:
+            threshold = np.percentile(rgb_diff, 25)
+        
         mask1 = rgb_diff <= threshold
         masks.append(mask1)
         
-        # 2. Analiza w przestrzeni HSV
+        # 2. Ulepszona analiza w przestrzeni HSV z wagami
         try:
-            hsv_img = rgb_to_hsv_precise(img_array)
-            hsv_color = rgb_to_hsv_precise(color_array.reshape(1, 1, 3))[0, 0]
+            hsv_img = rgb_to_hsv_ultra_precise(img_array)
+            hsv_color = rgb_to_hsv_ultra_precise(color_array.reshape(1, 1, 3))[0, 0]
             
-            # Ważona odległość HSV (hue ma większą wagę)
-            h_diff = np.abs(hsv_img[:,:,0] - hsv_color[0])
+            # Bardzo precyzyjna ważona odległość HSV
+            h_diff = np.minimum(
+                np.abs(hsv_img[:,:,0] - hsv_color[0]),
+                1.0 - np.abs(hsv_img[:,:,0] - hsv_color[0])  # Uwzględnij cykliczność hue
+            )
             s_diff = np.abs(hsv_img[:,:,1] - hsv_color[1])
             v_diff = np.abs(hsv_img[:,:,2] - hsv_color[2])
             
-            # Ważona kombinacja
-            hsv_distance = np.sqrt(3*h_diff**2 + s_diff**2 + v_diff**2)
-            hsv_threshold = np.percentile(hsv_distance, 20)
+            # Adaptacyjne wagi w zależności od nasycenia
+            saturation = hsv_color[1]
+            if saturation > 0.7:  # Wysokie nasycenie - hue jest ważniejsze
+                hsv_distance = np.sqrt(4*h_diff**2 + 2*s_diff**2 + v_diff**2)
+            elif saturation < 0.3:  # Niskie nasycenie - value jest ważniejsze
+                hsv_distance = np.sqrt(h_diff**2 + s_diff**2 + 3*v_diff**2)
+            else:  # Średnie nasycenie - balans
+                hsv_distance = np.sqrt(2*h_diff**2 + 2*s_diff**2 + 2*v_diff**2)
+            
+            hsv_threshold = np.percentile(hsv_distance, 18)
             mask2 = hsv_distance <= hsv_threshold
             masks.append(mask2)
         except:
             pass
         
-        # 3. Segmentation-based mask
+        # 3. Ulepszona maska bazująca na segmentacji
         if segments is not None:
-            mask3 = create_segment_based_mask(img_array, color_array, segments)
+            mask3 = create_advanced_segment_mask(img_array, color_array, segments)
             if mask3 is not None:
                 masks.append(mask3)
         
-        # 4. Edge-aware mask
-        edge_mask = create_edge_aware_mask(img_array, color_array)
-        if edge_mask is not None:
-            masks.append(edge_mask)
+        # 4. Maska uwzględniająca lokalne kolory
+        local_mask = create_local_color_mask(img_array, color_array)
+        if local_mask is not None:
+            masks.append(local_mask)
         
-        # Kombinuj maski inteligentnie
+        # 5. Maska bazująca na podobieństwie tekstury
+        texture_mask = create_texture_similarity_mask(img_array, color_array)
+        if texture_mask is not None:
+            masks.append(texture_mask)
+        
+        # Inteligentne kombinowanie masek
         if len(masks) > 0:
-            # Użyj intersection dla najbardziej pewnych obszarów
-            combined_mask = masks[0]
-            for mask in masks[1:]:
-                # Soft combination - obszary wspólne mają wyższą pewność
-                combined_mask = combined_mask | mask
+            # Głosowanie większościowe z wagami
+            combined_mask = np.zeros_like(masks[0], dtype=float)
+            weights = [1.0, 0.8, 0.6, 0.5, 0.4]  # Wagi dla różnych metod
             
-            return combined_mask
+            for i, mask in enumerate(masks):
+                weight = weights[i] if i < len(weights) else 0.3
+                combined_mask += mask.astype(float) * weight
+            
+            # Próg dla decyzji końcowej (większość ważona)
+            final_mask = combined_mask >= (sum(weights[:len(masks)]) * 0.4)
+            
+            return final_mask
         
         return None
         
     except Exception as e:
         print(f"Błąd w create_ultra_precise_mask: {e}")
+        return None
+
+def rgb_to_hsv_ultra_precise(rgb):
+    """Ultra precyzyjna konwersja RGB do HSV"""
+    try:
+        rgb = rgb.astype(float) / 255.0
+        max_val = np.max(rgb, axis=-1)
+        min_val = np.min(rgb, axis=-1)
+        diff = max_val - min_val
+        
+        # Value
+        v = max_val
+        
+        # Saturation
+        s = np.where(max_val > 1e-6, diff / max_val, 0)
+        
+        # Hue z wysoką precyzją
+        h = np.zeros_like(max_val)
+        
+        # Unikaj dzielenia przez zero
+        mask = diff > 1e-6
+        
+        # Red is max
+        red_max = (rgb[..., 0] == max_val) & mask
+        h[red_max] = ((rgb[red_max, 1] - rgb[red_max, 2]) / diff[red_max]) % 6
+        
+        # Green is max
+        green_max = (rgb[..., 1] == max_val) & mask
+        h[green_max] = (rgb[green_max, 2] - rgb[green_max, 0]) / diff[green_max] + 2
+        
+        # Blue is max
+        blue_max = (rgb[..., 2] == max_val) & mask
+        h[blue_max] = (rgb[blue_max, 0] - rgb[blue_max, 1]) / diff[blue_max] + 4
+        
+        h = h / 6.0  # Normalize to [0, 1]
+        
+        return np.stack([h, s, v], axis=-1)
+    except:
+        return rgb
+
+def create_advanced_segment_mask(img_array, color_array, segments):
+    """Tworzy zaawansowaną maskę bazującą na segmentach"""
+    try:
+        mask = np.zeros(img_array.shape[:2], dtype=bool)
+        
+        for seg_id in np.unique(segments):
+            seg_mask = segments == seg_id
+            seg_pixels = img_array[seg_mask]
+            
+            if len(seg_pixels) > 10:
+                # Sprawdź średni kolor segmentu
+                seg_mean_color = np.mean(seg_pixels, axis=0)
+                mean_distance = np.sqrt(np.sum((seg_mean_color - color_array)**2))
+                
+                # Sprawdź odsetek podobnych pikseli w segmencie
+                distances = np.sqrt(np.sum((seg_pixels - color_array)**2, axis=1))
+                similar_ratio = np.sum(distances < 30) / len(seg_pixels)
+                
+                # Decyzja na podstawie średniej i stosunku
+                if mean_distance < 35 and similar_ratio > 0.25:
+                    mask[seg_mask] = True
+                elif mean_distance < 20:  # Bardzo podobny średni kolor
+                    mask[seg_mask] = True
+                elif similar_ratio > 0.6:  # Większość pikseli podobna
+                    mask[seg_mask] = True
+        
+        return mask if np.sum(mask) > 0 else None
+    except:
+        return None
+
+def create_local_color_mask(img_array, color_array):
+    """Tworzy maskę bazującą na lokalnym podobieństwie kolorów"""
+    try:
+        from scipy import ndimage
+        
+        # Podstawowa maska podobieństwa
+        distances = np.sqrt(np.sum((img_array - color_array)**2, axis=2))
+        base_mask = distances < 35
+        
+        if np.sum(base_mask) == 0:
+            return None
+        
+        # Rozszerz maskę w obszarach o podobnych kolorach
+        kernel = np.ones((5, 5))
+        dilated_mask = ndimage.binary_dilation(base_mask, structure=kernel, iterations=1)
+        
+        # Sprawdź czy rozszerzone obszary są rzeczywiście podobne
+        extended_pixels = img_array[dilated_mask & ~base_mask]
+        if len(extended_pixels) > 0:
+            ext_distances = np.sqrt(np.sum((extended_pixels - color_array)**2, axis=1))
+            valid_extension = ext_distances < 50
+            
+            # Dodaj tylko te rozszerzone piksele, które są wystarczająco podobne
+            extension_coords = np.where(dilated_mask & ~base_mask)
+            for i, is_valid in enumerate(valid_extension):
+                if not is_valid:
+                    dilated_mask[extension_coords[0][i], extension_coords[1][i]] = False
+        
+        return dilated_mask
+    except:
+        return None
+
+def create_texture_similarity_mask(img_array, color_array):
+    """Tworzy maskę bazującą na podobieństwie tekstury lokalnej"""
+    try:
+        from scipy import ndimage
+        
+        # Znajdź piksele o podobnym kolorze
+        distances = np.sqrt(np.sum((img_array - color_array)**2, axis=2))
+        base_mask = distances < 40
+        
+        if np.sum(base_mask) < 50:
+            return None
+        
+        # Oblicz lokalną teksturę (gradient)
+        gray = np.mean(img_array, axis=2)
+        gx = ndimage.sobel(gray, axis=0)
+        gy = ndimage.sobel(gray, axis=1)
+        gradient_magnitude = np.sqrt(gx**2 + gy**2)
+        
+        # Znajdź średnią teksturę w obszarach bazowej maski
+        mean_texture = np.mean(gradient_magnitude[base_mask])
+        texture_std = np.std(gradient_magnitude[base_mask])
+        
+        # Rozszerz maskę na obszary o podobnej teksturze
+        texture_threshold = mean_texture + 1.5 * texture_std
+        similar_texture = np.abs(gradient_magnitude - mean_texture) < texture_threshold
+        
+        # Kombinuj maski kolorów i tekstury
+        combined_mask = base_mask | (similar_texture & (distances < 60))
+        
+        return combined_mask if np.sum(combined_mask) > np.sum(base_mask) else base_mask
+    except:
         return None
 
 def rgb_to_hsv_precise(rgb):
