@@ -947,6 +947,27 @@ def extract_edge_colors(img_array, max_colors):
     """Wyciąga kolory z obszarów krawędzi"""
     try:
         from scipy import ndimage
+        
+        # Wykryj krawędzie
+        gray = np.mean(img_array, axis=2)
+        edges = ndimage.sobel(gray) > 30
+        
+        # Wyciągnij kolory z pikseli przy krawędziach
+        edge_pixels = img_array[edges]
+        if len(edge_pixels) > 1000:
+            step = len(edge_pixels) // 1000
+            edge_pixels = edge_pixels[::step]
+        
+        # Clustering kolorów krawędzi
+        if len(edge_pixels) > 0:
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(n_clusters=min(max_colors, len(edge_pixels)), random_state=42)
+            kmeans.fit(edge_pixels)
+            return [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        
+        return []
+    except:
+        return []
 
 def revolutionary_image_preprocessing(image, scale):
     """Rewolucyjne przetwarzanie obrazu z adaptacyjnymi algorytmami"""
