@@ -37,41 +37,55 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def optimize_image_for_vectorization(image_path, max_size=MAX_IMAGE_SIZE):
-    """Zaawansowana optymalizacja obrazu do wektoryzacji wysokiej jakości"""
+    """Ultra zaawansowana optymalizacja obrazu z zachowaniem szczegółów oryginalnego"""
     try:
         with Image.open(image_path) as img:
-            # Konwersja do RGB
+            # Konwersja do RGB z zachowaniem jakości
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            # Znacznie większy rozmiar dla ultra wysokiej jakości
-            target_size = min(max_size * 2.5, 2000)
-            img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+            # Zachowaj oryginalny rozmiar dla małych obrazów, zwiększ dla większych
+            original_width, original_height = img.size
+            if max(original_width, original_height) < 800:
+                # Małe obrazy - zwiększ 2x dla lepszej jakości
+                target_size = min(max_size * 2, 1600)
+            else:
+                # Większe obrazy - zachowaj wysoką rozdzielczość
+                target_size = min(max_size * 1.5, 1200)
             
-            # Adaptacyjne przetwarzanie w zależności od typu obrazu
-            img_array = np.array(img)
+            # Wysokiej jakości skalowanie z zachowaniem ostrości
+            if max(original_width, original_height) > target_size:
+                img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
             
-            # Wykryj typ obrazu (cartoon vs. foto vs. logo)
-            edge_density = detect_edge_density(img_array)
-            color_complexity = detect_color_complexity(img_array)
-            
-            if edge_density > 0.15:  # Logo/grafika wektorowa
-                # Agresywna optymalizacja dla grafik wektorowych
-                img = enhance_vector_graphics(img)
-            elif color_complexity < 50:  # Cartoon/ilustracja
-                # Optymalizacja dla cartoon-style
-                img = enhance_cartoon_style(img)
-            else:  # Zdjęcie fotorealistyczne
-                # Przygotowanie zdjęć do wektoryzacji
-                img = enhance_photo_for_vector(img)
-            
-            # Finalne szarpienie krawędzi
-            img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=200, threshold=3))
+            # Multi-pass enhancement dla cartoon-style images
+            img = enhance_cartoon_precision(img)
             
             return img
     except Exception as e:
         print(f"Błąd podczas optymalizacji obrazu: {e}")
         return None
+
+def enhance_cartoon_precision(img):
+    """Ulepszona precyzja dla obrazów cartoon-style"""
+    try:
+        # Delikatne zwiększenie kontrastu bez utraty szczegółów
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.3)
+        
+        # Precyzyjne wyostrzenie krawędzi
+        img = img.filter(ImageFilter.UnsharpMask(radius=0.5, percent=150, threshold=2))
+        
+        # Redukcja szumu przy zachowaniu detali
+        img = img.filter(ImageFilter.SMOOTH_MORE)
+        
+        # Finalne wyostrzenie
+        enhancer = ImageEnhance.Sharpness(img)
+        img = enhancer.enhance(1.4)
+        
+        return img
+    except Exception as e:
+        print(f"Błąd w enhance_cartoon_precision: {e}")
+        return img
 
 def detect_edge_density(img_array):
     """Wykrywa gęstość krawędzi w obrazie"""
@@ -143,44 +157,242 @@ def enhance_photo_for_vector(img):
     
     return img
 
-def extract_dominant_colors_advanced(image, max_colors=20):
-    """Ultra zaawansowane wyciąganie kolorów z analizą histogramów i LAB"""
+def extract_dominant_colors_advanced(image, max_colors=30):
+    """Ultra precyzyjna analiza kolorów z zachowaniem detali oryginalnego obrazu"""
     try:
         img_array = np.array(image)
+        
+        # Wielopoziomowa analiza kolorów
+        colors = []
+        
+        # 1. Precyzyjne wykrywanie kolorów dominujących
+        dominant_colors = extract_precise_dominant_colors(img_array, max_colors // 3)
+        colors.extend(dominant_colors)
+        
+        # 2. Analiza kolorów krawędzi (ważne dla cartoon-style)
+        edge_colors = extract_edge_based_colors(img_array, max_colors // 3)
+        colors.extend(edge_colors)
+        
+        # 3. Analiza kolorów gradientów i przejść
+        gradient_colors = extract_gradient_colors(img_array, max_colors // 3)
+        colors.extend(gradient_colors)
+        
+        # 4. K-means clustering z wyższą precyzją
+        if len(colors) < max_colors:
+            additional_colors = extract_high_precision_kmeans(img_array, max_colors - len(colors))
+            colors.extend(additional_colors)
+        
+        # Usuwanie duplikatów z precyzyjną tolerancją
+        final_colors = remove_similar_colors_precise(colors, max_colors)
+        
+        # Sortowanie według ważności w obrazie
+        final_colors = sort_colors_by_importance(img_array, final_colors)
+        
+        print(f"🎨 Ultra precyzyjna analiza: {len(final_colors)} kolorów z zachowaniem szczegółów")
+        return final_colors
+        
+    except Exception as e:
+        print(f"Błąd podczas ultra precyzyjnej analizy kolorów: {e}")
+        return extract_dominant_colors_simple(image, max_colors)
+
+def extract_precise_dominant_colors(img_array, max_colors):
+    """Precyzyjne wyciąganie kolorów dominujących"""
+    try:
+        from sklearn.cluster import KMeans
+        
+        # Próbkowanie z zachowaniem reprezentatywności
+        height, width = img_array.shape[:2]
+        sample_rate = min(0.3, 50000 / (height * width))
+        
+        pixels = img_array.reshape(-1, 3)
+        if len(pixels) > 50000:
+            step = int(1 / sample_rate)
+            pixels = pixels[::step]
+        
+        # K-means z większą liczbą iteracji dla precyzji
+        kmeans = KMeans(n_clusters=max_colors, random_state=42, n_init=30, max_iter=500)
+        kmeans.fit(pixels)
+        
+        return [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+    except:
+        return []
+
+def extract_edge_based_colors(img_array, max_colors):
+    """Wyciąga kolory z obszarów krawędzi - kluczowe dla cartoon-style"""
+    try:
+        from scipy import ndimage
+        
+        # Wykryj krawędzie z wysoką precyzją
+        gray = np.mean(img_array, axis=2)
+        edges = ndimage.sobel(gray)
+        
+        # Threshold adaptacyjny
+        threshold = np.percentile(edges, 85)
+        edge_mask = edges > threshold
+        
+        # Rozszerz obszary krawędzi
+        from scipy.ndimage import binary_dilation
+        edge_mask = binary_dilation(edge_mask, iterations=2)
+        
+        # Wyciągnij kolory z obszarów krawędzi
+        edge_pixels = img_array[edge_mask]
+        
+        if len(edge_pixels) > 1000:
+            from sklearn.cluster import KMeans
+            n_clusters = min(max_colors, len(edge_pixels) // 100)
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+                kmeans.fit(edge_pixels)
+                return [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        
+        return []
+    except:
+        return []
+
+def extract_gradient_colors(img_array, max_colors):
+    """Wyciąga kolory z obszarów gradientów"""
+    try:
+        from scipy import ndimage
+        
+        # Oblicz gradienty dla każdego kanału
+        gradients = []
+        for channel in range(3):
+            grad_x = ndimage.sobel(img_array[:,:,channel], axis=1)
+            grad_y = ndimage.sobel(img_array[:,:,channel], axis=0)
+            gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+            gradients.append(gradient_magnitude)
+        
+        # Znajdź obszary z wysokimi gradientami
+        total_gradient = np.sum(gradients, axis=0)
+        threshold = np.percentile(total_gradient, 70)
+        gradient_mask = total_gradient > threshold
+        
+        # Wyciągnij kolory z tych obszarów
+        gradient_pixels = img_array[gradient_mask]
+        
+        if len(gradient_pixels) > 500:
+            # Clustering kolorów gradientów
+            from sklearn.cluster import KMeans
+            n_clusters = min(max_colors, len(gradient_pixels) // 200)
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+                kmeans.fit(gradient_pixels)
+                return [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        
+        return []
+    except:
+        return []
+
+def extract_high_precision_kmeans(img_array, max_colors):
+    """K-means z wysoką precyzją"""
+    try:
+        from sklearn.cluster import KMeans
         
         # Konwersja do przestrzeni LAB dla lepszej percepcji kolorów
         from skimage.color import rgb2lab, lab2rgb
         lab_image = rgb2lab(img_array / 255.0)
         
-        # Wieloetapowa analiza kolorów
-        colors = []
+        pixels = lab_image.reshape(-1, 3)
+        if len(pixels) > 20000:
+            pixels = pixels[::len(pixels)//20000]
         
-        # 1. Analiza histogramów RGB
-        rgb_colors = extract_histogram_peaks(img_array, max_colors // 2)
-        colors.extend(rgb_colors)
+        kmeans = KMeans(n_clusters=max_colors, random_state=42, n_init=50, max_iter=1000)
+        kmeans.fit(pixels)
         
-        # 2. K-means clustering w przestrzeni LAB
-        if len(colors) < max_colors:
-            lab_colors = extract_kmeans_lab_colors(lab_image, max_colors - len(colors))
-            colors.extend(lab_colors)
+        # Konwersja z powrotem do RGB
+        rgb_colors = []
+        for lab_color in kmeans.cluster_centers_:
+            try:
+                rgb = lab2rgb(lab_color.reshape(1, 1, 3))[0, 0]
+                rgb = np.clip(rgb * 255, 0, 255).astype(int)
+                rgb_colors.append(tuple(rgb))
+            except:
+                continue
         
-        # 3. Analiza krawędzi dla kolorów kontrastowych
-        if len(colors) < max_colors:
-            edge_colors = extract_edge_colors(img_array, max_colors - len(colors))
-            colors.extend(edge_colors)
+        return rgb_colors
+    except:
+        return []
+
+def remove_similar_colors_precise(colors, max_colors):
+    """Precyzyjne usuwanie podobnych kolorów"""
+    if not colors:
+        return []
+    
+    final_colors = [colors[0]]
+    
+    for color in colors[1:]:
+        is_unique = True
         
-        # Usuwanie podobnych kolorów z adaptacyjną tolerancją
-        final_colors = remove_similar_colors_advanced(colors, max_colors)
+        for existing in final_colors:
+            # Bardziej precyzyjne obliczanie odległości
+            distance = calculate_color_distance_precise(color, existing)
+            
+            # Adaptacyjny próg w zależności od jasności
+            brightness = sum(existing) / 3
+            if brightness < 30:
+                tolerance = 8  # Bardzo małe różnice dla ciemnych kolorów
+            elif brightness > 220:
+                tolerance = 12  # Małe różnice dla jasnych kolorów
+            else:
+                tolerance = 10
+            
+            if distance < tolerance:
+                is_unique = False
+                break
         
-        # Sortowanie kolorów według częstotliwości występowania
-        final_colors = sort_colors_by_frequency(img_array, final_colors)
+        if is_unique and len(final_colors) < max_colors:
+            final_colors.append(color)
+    
+    return final_colors
+
+def calculate_color_distance_precise(color1, color2):
+    """Precyzyjne obliczanie odległości kolorów"""
+    try:
+        # Konwersja do przestrzeni LAB dla lepszej percepcji
+        from skimage.color import rgb2lab
         
-        print(f"🎨 Zaawansowana analiza: {len(final_colors)} kolorów wysokiej jakości")
-        return final_colors
+        c1_lab = rgb2lab(np.array(color1).reshape(1, 1, 3) / 255.0)[0, 0]
+        c2_lab = rgb2lab(np.array(color2).reshape(1, 1, 3) / 255.0)[0, 0]
         
-    except Exception as e:
-        print(f"Błąd podczas zaawansowanej analizy kolorów: {e}")
-        return extract_dominant_colors_simple(image, max_colors)
+        # Delta E - profesjonalna miara różnicy kolorów
+        delta_e = np.sqrt(np.sum((c1_lab - c2_lab)**2))
+        return delta_e
+    except:
+        # Fallback do Euclidean distance
+        return np.sqrt(sum((color1[i] - color2[i])**2 for i in range(3)))
+
+def sort_colors_by_importance(img_array, colors):
+    """Sortuje kolory według ważności w obrazie"""
+    try:
+        color_importance = []
+        
+        for color in colors:
+            # Oblicz częstotliwość występowania
+            distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+            frequency = np.sum(distances < 20)
+            
+            # Oblicz ważność na podstawie położenia (środek ważniejszy)
+            height, width = img_array.shape[:2]
+            y_coords, x_coords = np.where(distances < 20)
+            
+            if len(y_coords) > 0:
+                center_distance = np.mean(np.sqrt(
+                    ((y_coords - height/2) / height)**2 + 
+                    ((x_coords - width/2) / width)**2
+                ))
+                centrality_weight = 1.0 - center_distance
+            else:
+                centrality_weight = 0
+            
+            # Kombinuj częstotliwość i centralność
+            importance = frequency * (1 + centrality_weight)
+            color_importance.append((importance, color))
+        
+        # Sortuj według ważności (malejąco)
+        color_importance.sort(reverse=True)
+        return [color for importance, color in color_importance]
+    except:
+        return colors
 
 def extract_histogram_peaks(img_array, max_colors):
     """Wyciąga kolory z pików histogramów"""
@@ -341,25 +553,22 @@ def extract_dominant_colors_simple(image, max_colors=8):
         return [(0, 0, 0), (128, 128, 128), (255, 255, 255)]
 
 def create_color_regions_advanced(image, colors):
-    """Ultra zaawansowane tworzenie regionów z segmentacją i analizą sąsiedztwa"""
+    """Ultra precyzyjne tworzenie regionów z zachowaniem szczegółów oryginalnego obrazu"""
     try:
         width, height = image.size
         img_array = np.array(image)
         
         regions = []
         
-        # Wstępna segmentacja obrazu dla lepszej jakości
-        try:
-            from skimage.segmentation import slic, felzenszwalb
-            segments = slic(img_array, n_segments=min(300, width*height//1000), compactness=10, sigma=1)
-        except:
-            segments = None
+        # Zaawansowana segmentacja z zachowaniem krawędzi
+        segments = create_edge_preserving_segmentation(img_array)
         
+        # Analiza każdego koloru z maksymalną precyzją
         for i, color in enumerate(colors):
-            print(f"🎯 Przetwarzanie koloru {i+1}/{len(colors)}: {color}")
+            print(f"🎯 Ultra precyzyjne przetwarzanie koloru {i+1}/{len(colors)}: {color}")
             
-            # Multi-metodowa detekcja regionów
-            mask = create_multi_method_mask(img_array, color, segments)
+            # Wielopoziomowa detekcja regionów
+            mask = create_ultra_precise_mask(img_array, color, segments)
             
             if mask is None:
                 continue
@@ -367,30 +576,269 @@ def create_color_regions_advanced(image, colors):
             initial_pixels = np.sum(mask)
             print(f"  📊 Początkowe piksele: {initial_pixels}")
             
-            if initial_pixels > 10:  # Bardzo liberalny próg
-                # Zaawansowane przetwarzanie morfologiczne
-                mask = advanced_morphological_processing(mask, initial_pixels)
+            if initial_pixels > 5:  # Jeszcze niższy próg dla większej precyzji
+                # Zachowanie szczegółów z minimalnymi przekształceniami
+                mask = preserve_detail_processing(mask, initial_pixels)
                 
-                # Inteligentne łączenie fragmentów
-                mask = intelligent_fragment_merging(mask, img_array, color)
+                # Inteligentne łączenie z zachowaniem kształtów
+                mask = smart_shape_preserving_merge(mask, img_array, color)
                 
                 final_pixels = np.sum(mask)
                 print(f"  ✅ Finalne piksele: {final_pixels}")
                 
-                if final_pixels > 5:  # Bardzo niski próg
+                if final_pixels > 3:  # Bardzo niski próg dla zachowania detali
                     regions.append((color, mask))
-                    print(f"  ✓ Dodano region dla koloru {color}")
+                    print(f"  ✓ Dodano region z zachowaniem szczegółów dla koloru {color}")
                 else:
                     print(f"  ✗ Region za mały po przetwarzaniu")
             else:
                 print(f"  ✗ Brak wystarczających pikseli")
         
-        print(f"🏁 Utworzono {len(regions)} regionów wysokiej jakości")
+        print(f"🏁 Utworzono {len(regions)} regionów ultra wysokiej precyzji")
         return regions
         
     except Exception as e:
-        print(f"❌ Błąd podczas zaawansowanego tworzenia regionów: {e}")
+        print(f"❌ Błąd podczas ultra precyzyjnego tworzenia regionów: {e}")
         return create_color_regions_simple(image, colors)
+
+def create_edge_preserving_segmentation(img_array):
+    """Tworzy segmentację zachowującą krawędzie"""
+    try:
+        from skimage.segmentation import felzenszwalb, slic
+        from skimage.filters import gaussian
+        
+        # Delikatne wygładzanie bez utraty krawędzi
+        smoothed = gaussian(img_array, sigma=0.5, channel_axis=2)
+        
+        # Felzenszwalb dla zachowania krawędzi
+        segments = felzenszwalb(smoothed, scale=100, sigma=0.5, min_size=10)
+        
+        return segments
+    except:
+        return None
+
+def create_ultra_precise_mask(img_array, color, segments):
+    """Tworzy ultra precyzyjną maskę koloru"""
+    try:
+        height, width = img_array.shape[:2]
+        color_array = np.array(color)
+        
+        # Multi-metodowa precyzyjna detekcja
+        masks = []
+        
+        # 1. Bardzo precyzyjna odległość RGB
+        rgb_diff = np.sqrt(np.sum((img_array - color_array)**2, axis=2))
+        
+        # Adaptacyjny próg bazujący na analizie histogramu
+        hist, bins = np.histogram(rgb_diff, bins=50)
+        threshold_percentile = 15  # Bardzo precyzyjny próg
+        threshold = np.percentile(rgb_diff, threshold_percentile)
+        mask1 = rgb_diff <= threshold
+        masks.append(mask1)
+        
+        # 2. Analiza w przestrzeni HSV
+        try:
+            hsv_img = rgb_to_hsv_precise(img_array)
+            hsv_color = rgb_to_hsv_precise(color_array.reshape(1, 1, 3))[0, 0]
+            
+            # Ważona odległość HSV (hue ma większą wagę)
+            h_diff = np.abs(hsv_img[:,:,0] - hsv_color[0])
+            s_diff = np.abs(hsv_img[:,:,1] - hsv_color[1])
+            v_diff = np.abs(hsv_img[:,:,2] - hsv_color[2])
+            
+            # Ważona kombinacja
+            hsv_distance = np.sqrt(3*h_diff**2 + s_diff**2 + v_diff**2)
+            hsv_threshold = np.percentile(hsv_distance, 20)
+            mask2 = hsv_distance <= hsv_threshold
+            masks.append(mask2)
+        except:
+            pass
+        
+        # 3. Segmentation-based mask
+        if segments is not None:
+            mask3 = create_segment_based_mask(img_array, color_array, segments)
+            if mask3 is not None:
+                masks.append(mask3)
+        
+        # 4. Edge-aware mask
+        edge_mask = create_edge_aware_mask(img_array, color_array)
+        if edge_mask is not None:
+            masks.append(edge_mask)
+        
+        # Kombinuj maski inteligentnie
+        if len(masks) > 0:
+            # Użyj intersection dla najbardziej pewnych obszarów
+            combined_mask = masks[0]
+            for mask in masks[1:]:
+                # Soft combination - obszary wspólne mają wyższą pewność
+                combined_mask = combined_mask | mask
+            
+            return combined_mask
+        
+        return None
+        
+    except Exception as e:
+        print(f"Błąd w create_ultra_precise_mask: {e}")
+        return None
+
+def rgb_to_hsv_precise(rgb):
+    """Precyzyjna konwersja RGB do HSV"""
+    try:
+        rgb = rgb.astype(float) / 255.0
+        max_val = np.max(rgb, axis=-1)
+        min_val = np.min(rgb, axis=-1)
+        diff = max_val - min_val
+        
+        # Value
+        v = max_val
+        
+        # Saturation
+        s = np.where(max_val != 0, diff / max_val, 0)
+        
+        # Hue
+        h = np.zeros_like(max_val)
+        
+        # Calculate hue for each pixel
+        mask = diff != 0
+        
+        # Red is max
+        red_max = (rgb[..., 0] == max_val) & mask
+        h[red_max] = ((rgb[red_max, 1] - rgb[red_max, 2]) / diff[red_max]) % 6
+        
+        # Green is max
+        green_max = (rgb[..., 1] == max_val) & mask
+        h[green_max] = (rgb[green_max, 2] - rgb[green_max, 0]) / diff[green_max] + 2
+        
+        # Blue is max
+        blue_max = (rgb[..., 2] == max_val) & mask
+        h[blue_max] = (rgb[blue_max, 0] - rgb[blue_max, 1]) / diff[blue_max] + 4
+        
+        h = h / 6.0  # Normalize to [0, 1]
+        
+        return np.stack([h, s, v], axis=-1)
+    except:
+        return rgb
+
+def create_segment_based_mask(img_array, color_array, segments):
+    """Tworzy maskę bazując na segmentach"""
+    try:
+        mask = np.zeros(img_array.shape[:2], dtype=bool)
+        
+        for seg_id in np.unique(segments):
+            seg_mask = segments == seg_id
+            seg_pixels = img_array[seg_mask]
+            
+            if len(seg_pixels) > 0:
+                # Sprawdź czy segment zawiera podobne kolory
+                distances = np.sqrt(np.sum((seg_pixels - color_array)**2, axis=1))
+                similar_ratio = np.sum(distances < 25) / len(seg_pixels)
+                
+                # Jeśli znaczna część segmentu to podobny kolor
+                if similar_ratio > 0.3:
+                    mask[seg_mask] = True
+        
+        return mask if np.sum(mask) > 0 else None
+    except:
+        return None
+
+def create_edge_aware_mask(img_array, color_array):
+    """Tworzy maskę uwzględniającą krawędzie"""
+    try:
+        from scipy import ndimage
+        
+        # Podstawowa maska koloru
+        distances = np.sqrt(np.sum((img_array - color_array)**2, axis=2))
+        base_mask = distances < 30
+        
+        if np.sum(base_mask) == 0:
+            return None
+        
+        # Wykryj krawędzie
+        gray = np.mean(img_array, axis=2)
+        edges = ndimage.sobel(gray) > 20
+        
+        # Rozszerz maskę w obszarach bez krawędzi
+        # Ale ogranicz w obszarach z krawędziami
+        from scipy.ndimage import binary_dilation, binary_erosion
+        
+        # W obszarach bez krawędzi - rozszerz
+        no_edge_areas = ~edges
+        expanded_in_smooth = binary_dilation(base_mask & no_edge_areas, iterations=1)
+        
+        # W obszarach z krawędziami - zachowaj precyzję
+        precise_at_edges = base_mask & edges
+        
+        final_mask = expanded_in_smooth | precise_at_edges
+        
+        return final_mask if np.sum(final_mask) > np.sum(base_mask) * 0.5 else base_mask
+    except:
+        return None
+
+def preserve_detail_processing(mask, initial_pixels):
+    """Przetwarzanie z zachowaniem szczegółów"""
+    try:
+        from scipy import ndimage
+        
+        # Minimalne czyszczenie - tylko usunięcie pojedynczych pikseli
+        if initial_pixels > 1000:
+            # Dla większych regionów - delikatne czyszczenie
+            structure = np.ones((3, 3))
+            mask = ndimage.binary_closing(mask, structure=structure, iterations=1)
+            # Usuń bardzo małe komponenty (< 0.1% regionu)
+            labeled, num_features = ndimage.label(mask)
+            min_size = max(2, initial_pixels // 1000)
+            for i in range(1, num_features + 1):
+                if np.sum(labeled == i) < min_size:
+                    mask[labeled == i] = False
+        else:
+            # Dla mniejszych regionów - minimalne przetwarzanie
+            # Tylko usuń pojedyncze piksele
+            labeled, num_features = ndimage.label(mask)
+            for i in range(1, num_features + 1):
+                if np.sum(labeled == i) == 1:
+                    mask[labeled == i] = False
+        
+        return mask
+        
+    except Exception as e:
+        print(f"Błąd w preserve_detail_processing: {e}")
+        return mask
+
+def smart_shape_preserving_merge(mask, img_array, color):
+    """Inteligentne łączenie z zachowaniem kształtów"""
+    try:
+        from scipy import ndimage
+        
+        # Znajdź komponenty
+        labeled, num_features = ndimage.label(mask)
+        
+        if num_features <= 1:
+            return mask
+        
+        # Analizuj każdy komponent
+        color_array = np.array(color)
+        merged_mask = np.zeros_like(mask)
+        
+        for i in range(1, num_features + 1):
+            component = labeled == i
+            component_size = np.sum(component)
+            
+            # Zachowaj wszystkie komponenty powyżej minimalnego rozmiaru
+            if component_size >= 3:  # Bardzo niski próg
+                # Sprawdź jakość dopasowania koloru
+                component_pixels = img_array[component]
+                if len(component_pixels) > 0:
+                    mean_distance = np.mean(np.sqrt(np.sum((component_pixels - color_array)**2, axis=1)))
+                    
+                    # Bardziej liberalne kryteria dla zachowania szczegółów
+                    if mean_distance <= 60:  # Wyższy próg tolerancji
+                        merged_mask[component] = True
+        
+        return merged_mask
+        
+    except Exception as e:
+        print(f"Błąd w smart_shape_preserving_merge: {e}")
+        return mask
 
 def create_multi_method_mask(img_array, color, segments):
     """Tworzy maskę używając wielu metod"""
@@ -579,45 +1027,185 @@ def create_color_regions_simple(image, colors):
         return []
 
 def trace_contours_advanced(mask):
-    """Ultra zaawansowane śledzenie konturów z adaptacyjnymi algorytmami"""
+    """Ultra precyzyjne śledzenie konturów z zachowaniem detali oryginalnego kształtu"""
     try:
         from scipy import ndimage
         
         # Analiza maski dla wyboru optymalnej strategii
         mask_size = np.sum(mask)
-        mask_shape = analyze_mask_shape(mask)
+        mask_complexity = analyze_mask_complexity(mask)
         
-        print(f"  🔍 Analiza maski: rozmiar={mask_size}, kształt={mask_shape}")
+        print(f"  🔍 Analiza maski: rozmiar={mask_size}, złożoność={mask_complexity}")
         
-        # Adaptacyjne przetwarzanie w zależności od charakterystyki
-        if mask_shape == 'geometric':
-            # Geometryczne kształty - zachowaj ostre krawędzie
-            processed_mask = preserve_sharp_edges(mask)
-            contours = trace_geometric_contours(processed_mask)
-        elif mask_shape == 'organic':
-            # Organiczne kształty - delikatne wygładzanie
-            processed_mask = smooth_organic_edges(mask)
-            contours = trace_organic_contours(processed_mask)
+        # Minimalne przetwarzanie wstępne - zachowaj oryginalny kształt
+        processed_mask = minimal_mask_preprocessing(mask)
+        
+        # Wybór metody śledzenia bazującej na rozmiarze i złożoności
+        if mask_size > 1000 and mask_complexity == 'high':
+            contours = trace_high_detail_contours(processed_mask)
+        elif mask_complexity == 'medium':
+            contours = trace_balanced_contours(processed_mask)
         else:
-            # Mieszane - hybrydowe podejście
-            processed_mask = hybrid_processing(mask)
-            contours = trace_hybrid_contours(processed_mask)
+            contours = trace_simple_precise_contours(processed_mask)
         
-        # Post-processing konturów
+        # Minimalna post-processing - zachowaj szczegóły
         final_contours = []
         for contour in contours:
             if len(contour) >= 3:
-                # Optymalizacja konturu
-                optimized = optimize_contour_points(contour, mask_shape)
+                # Bardzo delikatna optymalizacja
+                optimized = minimal_contour_optimization(contour)
                 if optimized and len(optimized) >= 3:
                     final_contours.append(optimized)
         
-        print(f"  ✅ Wygenerowano {len(final_contours)} konturów wysokiej jakości")
+        print(f"  ✅ Wygenerowano {len(final_contours)} konturów ultra wysokiej precyzji")
         return final_contours
         
     except Exception as e:
-        print(f"❌ Błąd podczas ultra zaawansowanego śledzenia: {e}")
+        print(f"❌ Błąd podczas ultra precyzyjnego śledzenia: {e}")
         return trace_contours_simple_improved(mask)
+
+def analyze_mask_complexity(mask):
+    """Analizuje złożoność kształtu maski"""
+    try:
+        from scipy import ndimage
+        
+        # Policz komponenty
+        labeled, num_features = ndimage.label(mask)
+        
+        # Policz "dziury" (holes)
+        filled = ndimage.binary_fill_holes(mask)
+        holes = filled & ~mask
+        num_holes = np.sum(holes)
+        
+        # Policz zmienność krawędzi
+        edges = ndimage.sobel(mask.astype(float))
+        edge_variance = np.var(edges[edges > 0]) if np.any(edges > 0) else 0
+        
+        # Klasyfikacja złożoności
+        if num_features > 3 or num_holes > 10 or edge_variance > 0.5:
+            return 'high'
+        elif num_features > 1 or num_holes > 2 or edge_variance > 0.2:
+            return 'medium'
+        else:
+            return 'simple'
+    except:
+        return 'medium'
+
+def minimal_mask_preprocessing(mask):
+    """Minimalne przetwarzanie maski - zachowaj oryginalny kształt"""
+    try:
+        from scipy import ndimage
+        
+        # Tylko usuń pojedyncze izolowane piksele
+        labeled, num_features = ndimage.label(mask)
+        cleaned_mask = mask.copy()
+        
+        for i in range(1, num_features + 1):
+            component = labeled == i
+            if np.sum(component) == 1:  # Pojedynczy piksel
+                cleaned_mask[component] = False
+        
+        return cleaned_mask
+    except:
+        return mask
+
+def trace_high_detail_contours(mask):
+    """Śledzenie konturów dla wysokich detali"""
+    try:
+        if cv2 is not None:
+            mask_uint8 = (mask * 255).astype(np.uint8)
+            
+            # Użyj CHAIN_APPROX_NONE dla zachowania wszystkich punktów
+            contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            
+            processed = []
+            for contour in contours:
+                if len(contour) >= 6:
+                    # Minimalne upraszczanie - zachowaj 95% punktów
+                    perimeter = cv2.arcLength(contour, True)
+                    epsilon = 0.001 * perimeter  # Bardzo mały epsilon
+                    simplified = cv2.approxPolyDP(contour, epsilon, True)
+                    
+                    if len(simplified) >= 3:
+                        points = [(int(p[0][0]), int(p[0][1])) for p in simplified]
+                        processed.append(points)
+            
+            return processed
+        else:
+            return trace_contours_simple_improved(mask)
+    except:
+        return trace_contours_simple_improved(mask)
+
+def trace_balanced_contours(mask):
+    """Śledzenie konturów z balansem między precyzją a wydajnością"""
+    try:
+        if cv2 is not None:
+            mask_uint8 = (mask * 255).astype(np.uint8)
+            contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            processed = []
+            for contour in contours:
+                if len(contour) >= 4:
+                    perimeter = cv2.arcLength(contour, True)
+                    epsilon = 0.002 * perimeter  # Umiarkowane upraszczanie
+                    simplified = cv2.approxPolyDP(contour, epsilon, True)
+                    
+                    if len(simplified) >= 3:
+                        points = [(int(p[0][0]), int(p[0][1])) for p in simplified]
+                        processed.append(points)
+            
+            return processed
+        else:
+            return trace_contours_simple_improved(mask)
+    except:
+        return trace_contours_simple_improved(mask)
+
+def trace_simple_precise_contours(mask):
+    """Śledzenie konturów dla prostych kształtów z wysoką precyzją"""
+    try:
+        if cv2 is not None:
+            mask_uint8 = (mask * 255).astype(np.uint8)
+            contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_L1)
+            
+            processed = []
+            for contour in contours:
+                if len(contour) >= 3:
+                    # Bardzo delikatne upraszczanie
+                    perimeter = cv2.arcLength(contour, True)
+                    epsilon = 0.0005 * perimeter  # Minimalny epsilon
+                    simplified = cv2.approxPolyDP(contour, epsilon, True)
+                    
+                    if len(simplified) >= 3:
+                        points = [(int(p[0][0]), int(p[0][1])) for p in simplified]
+                        processed.append(points)
+            
+            return processed
+        else:
+            return trace_contours_simple_improved(mask)
+    except:
+        return trace_contours_simple_improved(mask)
+
+def minimal_contour_optimization(contour):
+    """Minimalna optymalizacja konturu - zachowaj maksimum szczegółów"""
+    try:
+        if len(contour) <= 5:
+            return contour
+        
+        # Usuń tylko punkty, które są bardzo blisko siebie
+        optimized = [contour[0]]
+        
+        for i in range(1, len(contour)):
+            current = contour[i]
+            last = optimized[-1]
+            
+            # Usuń tylko jeśli punkty są praktycznie identyczne
+            distance = np.sqrt((current[0] - last[0])**2 + (current[1] - last[1])**2)
+            if distance >= 1.0:  # Bardzo niski próg
+                optimized.append(current)
+        
+        return optimized if len(optimized) >= 3 else contour
+    except:
+        return contour
 
 def analyze_mask_shape(mask):
     """Analizuje typ kształtu maski"""
@@ -936,35 +1524,176 @@ def trace_contours_simple(mask):
         return []
 
 def create_smooth_svg_path(contour):
-    """Tworzy ultra wysokiej jakości ścieżkę SVG z inteligentnym doborem krzywych"""
+    """Tworzy ultra precyzyjną ścieżkę SVG z zachowaniem szczegółów oryginalnego kształtu"""
     if len(contour) < 3:
         return None
     
     try:
-        # Analizuj charakterystykę konturu
-        contour_analysis = analyze_contour_characteristics(contour)
+        # Minimalna analiza - zachowaj oryginalny kształt
+        contour_detail_level = analyze_contour_detail_level(contour)
         
-        # Adaptacyjne upraszczanie w zależności od analizy
-        simplified_contour = adaptive_contour_simplification(contour, contour_analysis)
+        # Bardzo minimalne upraszczanie - zachowaj większość punktów
+        preserved_contour = preserve_contour_details(contour, contour_detail_level)
         
-        if len(simplified_contour) < 3:
-            simplified_contour = contour
+        print(f"    📐 Kontur: {len(contour)} → {len(preserved_contour)} punktów, szczegółowość: {contour_detail_level}")
         
-        print(f"    📐 Kontur: {len(contour)} → {len(simplified_contour)} punktów, typ: {contour_analysis['type']}")
-        
-        # Generuj ścieżkę w zależności od typu
-        if contour_analysis['type'] == 'geometric':
-            path_data = create_geometric_svg_path(simplified_contour)
-        elif contour_analysis['type'] == 'organic':
-            path_data = create_organic_svg_path(simplified_contour)
+        # Wybierz metodę zachowującą szczegóły
+        if contour_detail_level == 'high':
+            path_data = create_high_fidelity_svg_path(preserved_contour)
+        elif contour_detail_level == 'medium':
+            path_data = create_balanced_svg_path(preserved_contour)
         else:
-            path_data = create_hybrid_svg_path(simplified_contour)
+            path_data = create_simple_accurate_svg_path(preserved_contour)
         
         return path_data
         
     except Exception as e:
-        print(f"Błąd podczas tworzenia zaawansowanej ścieżki SVG: {e}")
+        print(f"Błąd podczas tworzenia precyzyjnej ścieżki SVG: {e}")
         return create_simple_svg_path(contour)
+
+def analyze_contour_detail_level(contour):
+    """Analizuje poziom szczegółowości konturu"""
+    try:
+        if len(contour) > 50:
+            return 'high'
+        elif len(contour) > 20:
+            return 'medium'
+        else:
+            return 'simple'
+    except:
+        return 'medium'
+
+def preserve_contour_details(contour, detail_level):
+    """Zachowuje szczegóły konturu z minimalnym upraszczaniem"""
+    try:
+        if detail_level == 'high':
+            # Zachowaj 95% punktów
+            step = max(1, len(contour) // 95)
+        elif detail_level == 'medium':
+            # Zachowaj 90% punktów
+            step = max(1, len(contour) // 45)
+        else:
+            # Zachowaj większość punktów
+            step = max(1, len(contour) // 20)
+        
+        if step == 1:
+            return contour
+        else:
+            preserved = contour[::step]
+            # Zawsze zachowaj pierwszy i ostatni punkt
+            if len(preserved) > 0 and preserved[-1] != contour[-1]:
+                preserved.append(contour[-1])
+            return preserved
+    except:
+        return contour
+
+def create_high_fidelity_svg_path(contour):
+    """Tworzy ścieżkę SVG wysokiej wierności"""
+    try:
+        if len(contour) < 3:
+            return create_simple_svg_path(contour)
+        
+        path_data = f"M {contour[0][0]:.3f} {contour[0][1]:.3f}"
+        
+        # Użyj krzywych dla płynnych przejść, ale zachowaj precyzję
+        i = 1
+        while i < len(contour):
+            if i + 2 < len(contour):
+                # Sprawdź czy warto użyć krzywej
+                if should_use_curve_precise(contour, i):
+                    p1 = contour[i]
+                    p2 = contour[i + 1]
+                    
+                    # Delikatne krzywe Beziera
+                    cp1_x = p1[0] + (p2[0] - contour[i-1][0]) * 0.15
+                    cp1_y = p1[1] + (p2[1] - contour[i-1][1]) * 0.15
+                    
+                    path_data += f" Q {cp1_x:.3f} {cp1_y:.3f} {p2[0]:.3f} {p2[1]:.3f}"
+                    i += 2
+                else:
+                    current = contour[i]
+                    path_data += f" L {current[0]:.3f} {current[1]:.3f}"
+                    i += 1
+            else:
+                current = contour[i]
+                path_data += f" L {current[0]:.3f} {current[1]:.3f}"
+                i += 1
+        
+        path_data += " Z"
+        return path_data
+    except:
+        return create_simple_svg_path(contour)
+
+def create_balanced_svg_path(contour):
+    """Tworzy zbalansowaną ścieżkę SVG"""
+    try:
+        path_data = f"M {contour[0][0]:.2f} {contour[0][1]:.2f}"
+        
+        for i in range(1, len(contour)):
+            current = contour[i]
+            
+            # Używaj głównie linii z okazjonalnymi krzywymi
+            if i % 3 == 0 and i + 1 < len(contour) and should_use_curve_precise(contour, i):
+                next_point = contour[i + 1] if i + 1 < len(contour) else contour[0]
+                prev_point = contour[i - 1]
+                
+                cp_x = current[0] + (next_point[0] - prev_point[0]) * 0.1
+                cp_y = current[1] + (next_point[1] - prev_point[1]) * 0.1
+                
+                path_data += f" Q {cp_x:.2f} {cp_y:.2f} {current[0]:.2f} {current[1]:.2f}"
+            else:
+                path_data += f" L {current[0]:.2f} {current[1]:.2f}"
+        
+        path_data += " Z"
+        return path_data
+    except:
+        return create_simple_svg_path(contour)
+
+def create_simple_accurate_svg_path(contour):
+    """Tworzy prostą ale dokładną ścieżkę SVG"""
+    try:
+        path_data = f"M {contour[0][0]:.2f} {contour[0][1]:.2f}"
+        
+        for point in contour[1:]:
+            path_data += f" L {point[0]:.2f} {point[1]:.2f}"
+        
+        path_data += " Z"
+        return path_data
+    except:
+        return create_simple_svg_path(contour)
+
+def should_use_curve_precise(contour, index):
+    """Precyzyjnie określa czy użyć krzywej"""
+    try:
+        if index < 1 or index >= len(contour) - 1:
+            return False
+        
+        prev_point = contour[index - 1]
+        current = contour[index]
+        next_point = contour[index + 1]
+        
+        # Oblicz kąty między segmentami
+        v1 = (current[0] - prev_point[0], current[1] - prev_point[1])
+        v2 = (next_point[0] - current[0], next_point[1] - current[1])
+        
+        len1 = np.sqrt(v1[0]**2 + v1[1]**2)
+        len2 = np.sqrt(v2[0]**2 + v2[1]**2)
+        
+        if len1 == 0 or len2 == 0:
+            return False
+        
+        # Znormalizuj wektory
+        v1_norm = (v1[0]/len1, v1[1]/len1)
+        v2_norm = (v2[0]/len2, v2[1]/len2)
+        
+        # Oblicz kąt
+        dot_product = v1_norm[0] * v2_norm[0] + v1_norm[1] * v2_norm[1]
+        angle = np.arccos(np.clip(dot_product, -1, 1))
+        
+        # Użyj krzywej dla łagodnych zakrętów i odpowiednio długich segmentów
+        return angle > np.pi/6 and min(len1, len2) > 8
+    except:
+        return False
 
 def analyze_contour_characteristics(contour):
     """Analizuje charakterystykę konturu"""
