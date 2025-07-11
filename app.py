@@ -1518,6 +1518,14 @@ def rank_colors_by_perceptual_importance(img_array, colors):
         
         # Clustering kolorów krawędzi
         if len(edge_pixels) > 0:
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(n_clusters=min(max_colors, len(edge_pixels)), random_state=42)
+            kmeans.fit(edge_pixels)
+            return [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        
+        return []
+    except:
+        return []
 
 def revolutionary_region_creation(image, colors, params):
     """Rewolucyjne tworzenie regionów z Deep Segmentation"""
