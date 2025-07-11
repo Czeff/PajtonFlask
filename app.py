@@ -25,7 +25,7 @@ app = Flask(__name__)
 # Konfiguracja
 UPLOAD_FOLDER = 'uploads'
 MAX_FILE_SIZE = 8 * 1024 * 1024  # 8MB
-MAX_IMAGE_SIZE = 800  # Zwiększono dla jeszcze wyższej jakości detali
+MAX_IMAGE_SIZE = 1200  # Znacznie zwiększono dla maksymalnej jakości detali
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'svg'}
 
 # Upewnij się, że katalogi istnieją
@@ -238,6 +238,52 @@ def flatten_color_palette(colors, target_count=16):
     except:
         print(f"⚠️ Błąd spłaszczania - używam prostego obcinania do {target_count} kolorów")
         return colors[:target_count]
+
+def enhance_image_quality_ultra_maximum(image):
+    """ULTRA maksymalne podniesienie jakości obrazu z perfekcyjnym zachowaniem każdego detalu"""
+    try:
+        print("🔬 Rozpoczynanie ULTRA maksymalnego podniesienia jakości...")
+        
+        # Pass 1: Bardzo precyzyjne zwiększenie kontrastu z zachowaniem najdrobniejszych detali
+        enhancer = ImageEnhance.Contrast(image)
+        enhanced = enhancer.enhance(1.35)
+        
+        # Pass 2: Multi-stage ultra precyzyjne wyostrzenie krawędzi
+        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=0.2, percent=140, threshold=0))
+        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=0.5, percent=100, threshold=1))
+        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=1.0, percent=60, threshold=2))
+        
+        # Pass 3: Zwiększenie nasycenia kolorów dla perfekcyjnego wykrywania
+        enhancer = ImageEnhance.Color(enhanced)
+        enhanced = enhancer.enhance(1.25)
+        
+        # Pass 4: Bardzo delikatna redukcja szumu zachowująca wszystkie detale
+        enhanced = enhanced.filter(ImageFilter.SMOOTH_MORE)
+        
+        # Pass 5: Progresywne wyostrzenie w kilku etapach
+        enhancer = ImageEnhance.Sharpness(enhanced)
+        enhanced = enhancer.enhance(1.4)
+        enhanced = enhanced.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        
+        # Pass 6: Finalne zwiększenie jasności dla maksymalnego kontrastu
+        enhancer = ImageEnhance.Brightness(enhanced)
+        enhanced = enhancer.enhance(1.08)
+        
+        # Pass 7: Ultra precyzyjne wyostrzenie najmniejszych detali
+        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=0.1, percent=80, threshold=0))
+        
+        # Pass 8: Końcowe dopracowanie krawędzi
+        enhanced = enhanced.filter(ImageFilter.FIND_EDGES)
+        enhanced = ImageEnhance.Contrast(enhanced).enhance(0.3)  # Delikatne dodanie krawędzi
+        original_enhanced = ImageEnhance.Contrast(image).enhance(1.35)
+        from PIL import ImageChops
+        enhanced = ImageChops.add(original_enhanced, enhanced)
+        
+        print("🔬 ULTRA maksymalne podniesienie jakości zakończone")
+        return enhanced
+    except Exception as e:
+        print(f"Błąd w enhance_image_quality_ultra_maximum: {e}")
+        return enhance_image_quality_maximum(image)
 
 def enhance_image_quality_maximum(image):
     """Maksymalne podniesienie jakości obrazu dla cartoon-style z jeszcze wyższą precyzją"""
@@ -524,7 +570,7 @@ def extract_shadow_highlight_colors(img_array, max_colors):
         return []
 
 def remove_similar_colors_ultra_precise(colors, max_colors, tolerance_factor=0.8):
-    """Ultra precyzyjne usuwanie podobnych kolorów z adaptacyjnym progiem dla cartoon-style"""
+    """Ultra precyzyjne usuwanie podobnych kolorów z maksymalnie liberalnym podejściem"""
     if not colors:
         return []
     
@@ -537,27 +583,27 @@ def remove_similar_colors_ultra_precise(colors, max_colors, tolerance_factor=0.8
             # Zaawansowane obliczanie różnicy kolorów w przestrzeni LAB
             distance = calculate_advanced_color_distance(color, existing)
             
-            # ZNACZNIE zmniejszone progi dla cartoon-style - zachowaj więcej kolorów
+            # DRASTYCZNIE zmniejszone progi - zachowaj praktycznie wszystkie odcienie
             brightness = sum(existing) / 3
             saturation = max(existing) - min(existing)
             
-            # Najwyższa precyzja progów tolerancji
+            # Minimalne progi tolerancji dla maksymalnej szczegółowości
             if brightness < 30:  # Bardzo ciemne kolory
-                base_tolerance = 1.5
+                base_tolerance = 0.8
             elif brightness < 60:  # Ciemne kolory
-                base_tolerance = 2.0
+                base_tolerance = 1.0
             elif brightness < 120:  # Średnio ciemne
-                base_tolerance = 2.5
+                base_tolerance = 1.2
             elif brightness > 230:  # Bardzo jasne kolory
-                base_tolerance = 4.0
+                base_tolerance = 2.0
             elif brightness > 200:  # Jasne kolory
-                base_tolerance = 3.5
+                base_tolerance = 1.8
             elif brightness > 160:  # Średnio jasne
-                base_tolerance = 3.0
+                base_tolerance = 1.5
             else:  # Średnie kolory
-                base_tolerance = 2.5
+                base_tolerance = 1.3
             
-            # Zastosuj czynnik tolerancji
+            # Zastosuj bardzo liberalny czynnik tolerancji
             tolerance = base_tolerance * tolerance_factor
             
             # Dodatkowa tolerancja dla wysoko nasyconych kolorów (typowe w cartoon)
@@ -2811,7 +2857,7 @@ def create_simple_svg_path(contour):
     return path_data
 
 def analyze_image_complexity(image):
-    """Analizuje złożoność obrazu i dostosowuje parametry z priorytetem na detale i kontrolę kolorów"""
+    """Analizuje złożoność obrazu i dostosowuje parametry z maksymalnym priorytetem na szczegółowość"""
     try:
         img_array = np.array(image)
         
@@ -2826,52 +2872,51 @@ def analyze_image_complexity(image):
         
         print(f"📊 Analiza złożoności: krawędzie={edge_density:.3f}, kolory={color_complexity}, entropia={img_entropy:.3f}")
         
-        # OPTYMALIZACJA: Ograniczamy do maksymalnie 16 kolorów dla lepszej kontroli
-        # ale zwiększamy precyzję wykrywania i zachowania detali
-        if edge_density > 0.12 and color_complexity > 150:
+        # MAKSYMALNA SZCZEGÓŁOWOŚĆ: Drastycznie zwiększone parametry dla wierności oryginałowi
+        if edge_density > 0.08 and color_complexity > 100:
             return {
-                'max_colors': 24,  # Zwiększono do 24 kolorów dla złożonych obrazów
-                'tolerance_factor': 0.6,  # Jeszcze większa precyzja
+                'max_colors': 40,  # Drastycznie zwiększono dla maksymalnej szczegółowości
+                'tolerance_factor': 0.4,  # Bardzo wysoka precyzja
+                'detail_preservation': 'ultra_maximum',
+                'min_region_size': 1,  # Zachowaj każdy piksel
+                'color_flattening': False,  # Wyłącz spłaszczanie dla zachowania wszystkich odcieni
+                'quality_enhancement': 'ultra_maximum'
+            }
+        elif edge_density > 0.05 or color_complexity > 50:
+            return {
+                'max_colors': 32,  # Bardzo wysokie dla detali
+                'tolerance_factor': 0.45,
                 'detail_preservation': 'ultra_high',
-                'min_region_size': 1,  # Zachowaj najmniejsze detale
-                'color_flattening': True,  # Włącz spłaszczanie kolorów
+                'min_region_size': 1,
+                'color_flattening': False,
                 'quality_enhancement': 'maximum'
             }
-        elif edge_density > 0.08 or color_complexity > 100:
+        elif color_complexity > 25:
             return {
-                'max_colors': 20,  # Zwiększono do 20 kolorów
-                'tolerance_factor': 0.65,
+                'max_colors': 28,  # Wysokie dla średnich obrazów
+                'tolerance_factor': 0.5,
                 'detail_preservation': 'very_high',
                 'min_region_size': 1,
-                'color_flattening': True,
+                'color_flattening': False,
                 'quality_enhancement': 'high'
-            }
-        elif color_complexity > 50:
-            return {
-                'max_colors': 16,  # Zwiększono do 16 kolorów
-                'tolerance_factor': 0.7,
-                'detail_preservation': 'high',
-                'min_region_size': 1,
-                'color_flattening': True,
-                'quality_enhancement': 'medium'
             }
         else:
             return {
-                'max_colors': 12,  # Zwiększono do 12 kolorów
-                'tolerance_factor': 0.75,
-                'detail_preservation': 'medium',
-                'min_region_size': 2,
-                'color_flattening': True,
-                'quality_enhancement': 'standard'
+                'max_colors': 24,  # Minimum dla prostych obrazów
+                'tolerance_factor': 0.55,
+                'detail_preservation': 'high',
+                'min_region_size': 1,
+                'color_flattening': False,
+                'quality_enhancement': 'high'
             }
     except:
         return {
-            'max_colors': 16,  # Domyślnie 16 kolorów
-            'tolerance_factor': 0.75,
-            'detail_preservation': 'high',
-            'min_region_size': 2,
-            'color_flattening': True,
-            'quality_enhancement': 'high'
+            'max_colors': 32,  # Domyślnie wysokie dla szczegółowości
+            'tolerance_factor': 0.5,
+            'detail_preservation': 'ultra_high',
+            'min_region_size': 1,
+            'color_flattening': False,
+            'quality_enhancement': 'maximum'
         }
 
 def vectorize_image_improved(image_path, output_path):
@@ -2894,16 +2939,22 @@ def vectorize_image_improved(image_path, output_path):
         max_colors = complexity_params['max_colors']
         
         # Dodatkowe podniesienie jakości jeśli wymagane
-        if complexity_params.get('quality_enhancement') == 'maximum':
+        if complexity_params.get('quality_enhancement') == 'ultra_maximum':
+            optimized_image = enhance_image_quality_ultra_maximum(optimized_image)
+            print("✨ Zastosowano ULTRA maksymalne podniesienie jakości obrazu")
+        elif complexity_params.get('quality_enhancement') == 'maximum':
             optimized_image = enhance_image_quality_maximum(optimized_image)
             print("✨ Zastosowano maksymalne podniesienie jakości obrazu")
         
-        colors = extract_dominant_colors_advanced(optimized_image, max_colors=max_colors*2, params=complexity_params)
+        colors = extract_dominant_colors_advanced(optimized_image, max_colors=max_colors*3, params=complexity_params)
         
-        # Spłaszczenie kolorów jeśli włączone
+        # Spłaszczenie kolorów jeśli włączone - dla maksymalnej szczegółowości często wyłączone
         if complexity_params.get('color_flattening', False):
             colors = flatten_color_palette(colors, target_count=max_colors)
-        print(f"🎨 Znaleziono {len(colors)} kolorów ultra wysokiej jakości (dostosowano do złożoności: {max_colors})")
+        else:
+            # Bez spłaszczania - zachowaj wszystkie wykryte odcienie
+            colors = colors[:max_colors] if len(colors) > max_colors else colors
+        print(f"🎨 Znaleziono {len(colors)} kolorów ultra wysokiej jakości (cel: {max_colors}, spłaszczanie: {complexity_params.get('color_flattening', False)})")
         
         if not colors:
             print("❌ Nie znaleziono kolorów")
