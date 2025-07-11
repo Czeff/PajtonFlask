@@ -44,26 +44,62 @@ def optimize_image_for_vectorization(image_path, max_size=MAX_IMAGE_SIZE):
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            # Zachowaj oryginalny rozmiar dla małych obrazów, zwiększ dla większych
+            # DRASTYCZNIE zwiększ rozdzielczość dla zachowania detali
             original_width, original_height = img.size
-            if max(original_width, original_height) < 800:
-                # Małe obrazy - zwiększ 2x dla lepszej jakości
-                target_size = min(max_size * 2, 1600)
+            if max(original_width, original_height) < 600:
+                # Małe obrazy - zwiększ 3x dla maksymalnej jakości detali
+                target_size = min(max_size * 3, 2400)
+            elif max(original_width, original_height) < 1000:
+                # Średnie obrazy - zwiększ 2.5x
+                target_size = min(max_size * 2.5, 2000)
             else:
-                # Większe obrazy - zachowaj wysoką rozdzielczość
-                target_size = min(max_size * 1.5, 1200)
+                # Większe obrazy - zachowaj bardzo wysoką rozdzielczość
+                target_size = min(max_size * 2, 1600)
             
             # Wysokiej jakości skalowanie z zachowaniem ostrości
             if max(original_width, original_height) > target_size:
                 img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+            elif max(original_width, original_height) < target_size * 0.8:
+                # Zwiększ małe obrazy dla lepszej jakości detali
+                scale_factor = target_size / max(original_width, original_height)
+                new_width = int(original_width * scale_factor)
+                new_height = int(original_height * scale_factor)
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             
-            # Multi-pass enhancement dla cartoon-style images
-            img = enhance_cartoon_precision(img)
+            # Multi-pass enhancement dla cartoon-style images z zachowaniem detali
+            img = enhance_cartoon_precision_ultra(img)
             
             return img
     except Exception as e:
         print(f"Błąd podczas optymalizacji obrazu: {e}")
         return None
+
+def enhance_cartoon_precision_ultra(img):
+    """Ultra precyzja dla obrazów cartoon-style z zachowaniem najmniejszych detali"""
+    try:
+        # Bardzo delikatne zwiększenie kontrastu z zachowaniem detali
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.2)
+        
+        # Multi-step wyostrzenie krawędzi z zachowaniem detali
+        img = img.filter(ImageFilter.UnsharpMask(radius=0.3, percent=120, threshold=1))
+        img = img.filter(ImageFilter.UnsharpMask(radius=0.8, percent=80, threshold=2))
+        
+        # Bardzo delikatna redukcja szumu bez utraty detali
+        img = img.filter(ImageFilter.SMOOTH)
+        
+        # Zwiększenie nasycenia dla lepszego wykrywania kolorów
+        enhancer = ImageEnhance.Color(img)
+        img = enhancer.enhance(1.1)
+        
+        # Finalne delikatne wyostrzenie
+        enhancer = ImageEnhance.Sharpness(img)
+        img = enhancer.enhance(1.2)
+        
+        return img
+    except Exception as e:
+        print(f"Błąd w enhance_cartoon_precision_ultra: {e}")
+        return img
 
 def enhance_cartoon_precision(img):
     """Ulepszona precyzja dla obrazów cartoon-style"""
@@ -409,25 +445,25 @@ def remove_similar_colors_ultra_precise(colors, max_colors):
             # Zaawansowane obliczanie różnicy kolorów w przestrzeni LAB
             distance = calculate_advanced_color_distance(color, existing)
             
-            # Bardziej zaawansowany adaptacyjny próg dla cartoon-style
+            # ZNACZNIE zmniejszone progi dla cartoon-style - zachowaj więcej kolorów
             brightness = sum(existing) / 3
             saturation = max(existing) - min(existing)
             
-            # Bazowy próg w zależności od jasności
+            # Znacznie niższe progi tolerancji dla zachowania detali
             if brightness < 30:  # Bardzo ciemne kolory
-                tolerance = 6
+                tolerance = 3  # Zmniejszono z 6
             elif brightness < 60:  # Ciemne kolory
-                tolerance = 8
+                tolerance = 4  # Zmniejszono z 8
             elif brightness < 120:  # Średnio ciemne
-                tolerance = 10
+                tolerance = 5  # Zmniejszono z 10
             elif brightness > 230:  # Bardzo jasne kolory
-                tolerance = 18
+                tolerance = 8  # Zmniejszono z 18
             elif brightness > 200:  # Jasne kolory
-                tolerance = 15
+                tolerance = 6  # Zmniejszono z 15
             elif brightness > 160:  # Średnio jasne
-                tolerance = 12
+                tolerance = 5  # Zmniejszono z 12
             else:  # Średnie kolory
-                tolerance = 10
+                tolerance = 4  # Zmniejszono z 10
             
             # Dodatkowa tolerancja dla wysoko nasyconych kolorów (typowe w cartoon)
             if saturation > 120:  # Bardzo nasycone
@@ -889,9 +925,9 @@ def create_color_regions_advanced(image, colors):
             initial_pixels = np.sum(mask)
             print(f"  📊 Początkowe piksele: {initial_pixels}")
             
-            if initial_pixels > 3:  # Bardzo niski próg dla zachowania szczegółów
+            if initial_pixels > 1:  # DRASTYCZNIE zmniejszony próg - zachowaj wszystkie detale
                 # Zachowanie szczegółów z minimalnymi przekształceniami
-                mask = preserve_detail_processing(mask, initial_pixels)
+                mask = preserve_detail_processing_ultra(mask, initial_pixels)
                 
                 # Inteligentne łączenie z zachowaniem kształtów
                 mask = smart_shape_preserving_merge(mask, img_array, color)
@@ -899,7 +935,7 @@ def create_color_regions_advanced(image, colors):
                 final_pixels = np.sum(mask)
                 print(f"  ✅ Finalne piksele: {final_pixels}")
                 
-                if final_pixels > 3:  # Bardzo niski próg dla zachowania detali
+                if final_pixels > 1:  # DRASTYCZNIE zmniejszony próg dla zachowania detali
                     regions.append((color, mask))
                     print(f"  ✓ Dodano region z zachowaniem szczegółów dla koloru {color}")
                 else:
@@ -1443,6 +1479,62 @@ def create_edge_aware_mask(img_array, color_array):
     except:
         return None
 
+def preserve_detail_processing_ultra(mask, initial_pixels):
+    """Ultra precyzyjne przetwarzanie z maksymalnym zachowaniem szczegółów"""
+    try:
+        from scipy import ndimage
+        
+        # MINIMALNE przetwarzanie - zachowaj każdy detal
+        if initial_pixels > 1000:
+            # Dla większych regionów - bardzo delikatne czyszczenie
+            structure = np.ones((3, 3))
+            
+            # Tylko wypełnij małe dziury
+            mask = ndimage.binary_fill_holes(mask)
+            
+            # Usuń tylko oczywiste artefakty (pojedyncze izolowane piksele)
+            labeled, num_features = ndimage.label(mask)
+            for i in range(1, num_features + 1):
+                component = labeled == i
+                if np.sum(component) == 1:  # Tylko pojedyncze piksele
+                    # Sprawdź czy to rzeczywiście izolowany artefakt
+                    y, x = np.where(component)
+                    if len(y) > 0:
+                        # Sprawdź 3x3 sąsiedztwo
+                        neighbors = 0
+                        for dy in [-1, 0, 1]:
+                            for dx in [-1, 0, 1]:
+                                ny, nx = y[0] + dy, x[0] + dx
+                                if (0 <= ny < mask.shape[0] and 0 <= nx < mask.shape[1] and 
+                                    mask[ny, nx] and not component[ny, nx]):
+                                    neighbors += 1
+                        
+                        # Usuń tylko jeśli ma mniej niż 2 sąsiadów
+                        if neighbors < 2:
+                            mask[component] = False
+                            
+        elif initial_pixels > 100:
+            # Dla średnich regionów - bardzo delikatne czyszczenie
+            mask = ndimage.binary_fill_holes(mask)
+            
+            # Usuń tylko pojedyncze izolowane piksele
+            labeled, num_features = ndimage.label(mask)
+            for i in range(1, num_features + 1):
+                component = labeled == i
+                if np.sum(component) == 1:
+                    mask[component] = False
+                    
+        else:
+            # Dla małych regionów - praktycznie bez czyszczenia
+            # Tylko wypełnij pojedyncze dziury
+            mask = ndimage.binary_fill_holes(mask)
+        
+        return mask
+        
+    except Exception as e:
+        print(f"Błąd w preserve_detail_processing_ultra: {e}")
+        return mask
+
 def preserve_detail_processing(mask, initial_pixels):
     """Przetwarzanie z zachowaniem szczegółów i usuwaniem artefaktów"""
     try:
@@ -1532,14 +1624,14 @@ def smart_shape_preserving_merge(mask, img_array, color):
             component_size = np.sum(component)
             
             # Zachowaj wszystkie komponenty powyżej minimalnego rozmiaru
-            if component_size >= 3:  # Bardzo niski próg
+            if component_size >= 1:  # DRASTYCZNIE zmniejszony próg - zachowaj każdy piksel
                 # Sprawdź jakość dopasowania koloru
                 component_pixels = img_array[component]
                 if len(component_pixels) > 0:
                     mean_distance = np.mean(np.sqrt(np.sum((component_pixels - color_array)**2, axis=1)))
                     
-                    # Bardziej liberalne kryteria dla zachowania szczegółów
-                    if mean_distance <= 60:  # Wyższy próg tolerancji
+                    # Bardzo liberalne kryteria dla zachowania szczegółów
+                    if mean_distance <= 80:  # Jeszcze wyższy próg tolerancji
                         merged_mask[component] = True
         
         return merged_mask
@@ -2624,7 +2716,7 @@ def create_simple_svg_path(contour):
     return path_data
 
 def analyze_image_complexity(image):
-    """Analizuje złożoność obrazu i dostosowuje parametry"""
+    """Analizuje złożoność obrazu i dostosowuje parametry z priorytetem na detale"""
     try:
         img_array = np.array(image)
         
@@ -2639,34 +2731,42 @@ def analyze_image_complexity(image):
         
         print(f"📊 Analiza złożoności: krawędzie={edge_density:.3f}, kolory={color_complexity}, entropia={img_entropy:.3f}")
         
-        # Dostosuj parametry w zależności od złożoności
-        if edge_density > 0.15 and color_complexity > 200:
+        # DRASTYCZNIE zwiększ liczbę kolorów dla cartoon-style
+        # Cartoon-style obrazy potrzebują więcej kolorów dla zachowania detali
+        if edge_density > 0.12 and color_complexity > 150:
             return {
-                'max_colors': 60,
-                'tolerance_factor': 1.2,
+                'max_colors': 80,  # Znacznie zwiększono
+                'tolerance_factor': 0.8,  # Zmniejszono tolerancję dla lepszej precyzji
+                'detail_preservation': 'ultra_high',
+                'min_region_size': 1  # Zachowaj nawet najmniejsze detale
+            }
+        elif edge_density > 0.08 or color_complexity > 100:
+            return {
+                'max_colors': 65,  # Znacznie zwiększono
+                'tolerance_factor': 0.9,  # Zmniejszono tolerancję
+                'detail_preservation': 'very_high',
+                'min_region_size': 1
+            }
+        elif color_complexity > 50:
+            return {
+                'max_colors': 50,  # Zwiększono
+                'tolerance_factor': 0.95,
                 'detail_preservation': 'high',
                 'min_region_size': 2
             }
-        elif edge_density > 0.1 or color_complexity > 150:
+        else:
             return {
-                'max_colors': 45,
-                'tolerance_factor': 1.1,
+                'max_colors': 40,  # Zwiększono baseline
+                'tolerance_factor': 1.0,
                 'detail_preservation': 'medium',
                 'min_region_size': 3
             }
-        else:
-            return {
-                'max_colors': 30,
-                'tolerance_factor': 1.0,
-                'detail_preservation': 'normal',
-                'min_region_size': 5
-            }
     except:
         return {
-            'max_colors': 40,
-            'tolerance_factor': 1.0,
-            'detail_preservation': 'medium',
-            'min_region_size': 3
+            'max_colors': 60,  # Zwiększono domyślną wartość
+            'tolerance_factor': 0.9,
+            'detail_preservation': 'high',
+            'min_region_size': 2
         }
 
 def vectorize_image_improved(image_path, output_path):
