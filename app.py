@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify, render_template_string, send_file
 from werkzeug.utils import secure_filename
 from PIL import Image, ImageFilter, ImageOps, ImageEnhance, ImageDraw, ImageFont
