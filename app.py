@@ -396,7 +396,7 @@ def extract_shadow_highlight_colors(img_array, max_colors):
         return []
 
 def remove_similar_colors_ultra_precise(colors, max_colors):
-    """Ultra precyzyjne usuwanie podobnych kolorów z adaptacyjnym progiem"""
+    """Ultra precyzyjne usuwanie podobnych kolorów z adaptacyjnym progiem dla cartoon-style"""
     if not colors:
         return []
     
@@ -409,24 +409,45 @@ def remove_similar_colors_ultra_precise(colors, max_colors):
             # Zaawansowane obliczanie różnicy kolorów w przestrzeni LAB
             distance = calculate_advanced_color_distance(color, existing)
             
-            # Bardzo precyzyjny adaptacyjny próg
+            # Bardziej zaawansowany adaptacyjny próg dla cartoon-style
             brightness = sum(existing) / 3
             saturation = max(existing) - min(existing)
             
-            if brightness < 40:  # Bardzo ciemne kolory
+            # Bazowy próg w zależności od jasności
+            if brightness < 30:  # Bardzo ciemne kolory
+                tolerance = 6
+            elif brightness < 60:  # Ciemne kolory
                 tolerance = 8
-            elif brightness < 80:  # Ciemne kolory
+            elif brightness < 120:  # Średnio ciemne
                 tolerance = 10
-            elif brightness > 220:  # Bardzo jasne kolory
+            elif brightness > 230:  # Bardzo jasne kolory
+                tolerance = 18
+            elif brightness > 200:  # Jasne kolory
                 tolerance = 15
-            elif brightness > 180:  # Jasne kolory
+            elif brightness > 160:  # Średnio jasne
                 tolerance = 12
             else:  # Średnie kolory
                 tolerance = 10
-                
-            # Dodatkowa tolerancja dla wysoko nasyconych kolorów
-            if saturation > 100:
+            
+            # Dodatkowa tolerancja dla wysoko nasyconych kolorów (typowe w cartoon)
+            if saturation > 120:  # Bardzo nasycone
+                tolerance += 5
+            elif saturation > 80:  # Nasycone
                 tolerance += 3
+            elif saturation < 20:  # Szare/niskie nasycenie
+                tolerance -= 2
+            
+            # Specjalna logika dla kolorów skóry (cartoon-style często ma specyficzne odcienie)
+            if is_skin_tone(existing) and is_skin_tone(color):
+                tolerance = max(4, tolerance * 0.6)  # Mniejsza tolerancja dla odcieni skóry
+            
+            # Specjalna logika dla zieleni (liście, trawa w cartoon)
+            if is_green_tone(existing) and is_green_tone(color):
+                tolerance *= 0.8  # Mniejsza tolerancja dla odcieni zieleni
+                
+            # Dodatkowa precyzja dla podstawowych kolorów cartoon
+            if is_primary_cartoon_color(existing) or is_primary_cartoon_color(color):
+                tolerance *= 0.7
             
             if distance < tolerance:
                 is_unique = False
@@ -436,6 +457,41 @@ def remove_similar_colors_ultra_precise(colors, max_colors):
             final_colors.append(color)
     
     return final_colors
+
+def is_skin_tone(color):
+    """Sprawdza czy kolor to odcień skóry"""
+    r, g, b = color[:3]
+    # Typowe zakresy dla odcieni skóry
+    return (120 <= r <= 255 and 80 <= g <= 220 and 60 <= b <= 180 and 
+            r > g > b and r - g < 80 and g - b < 60)
+
+def is_green_tone(color):
+    """Sprawdza czy kolor to odcień zieleni"""
+    r, g, b = color[:3]
+    # Zielone odcienie - g dominuje
+    return g > r and g > b and g > 80
+
+def is_primary_cartoon_color(color):
+    """Sprawdza czy to podstawowy kolor cartoon (czerwony, niebieski, żółty, etc.)"""
+    r, g, b = color[:3]
+    
+    # Czerwony
+    if r > 180 and g < 80 and b < 80:
+        return True
+    # Niebieski
+    if b > 180 and r < 80 and g < 80:
+        return True
+    # Żółty
+    if r > 180 and g > 180 and b < 80:
+        return True
+    # Czarny
+    if r < 50 and g < 50 and b < 50:
+        return True
+    # Biały
+    if r > 220 and g > 220 and b > 220:
+        return True
+    
+    return False
 
 def calculate_advanced_color_distance(color1, color2):
     """Zaawansowane obliczanie odległości kolorów z Delta E 2000"""
@@ -875,91 +931,107 @@ def create_edge_preserving_segmentation(img_array):
         return None
 
 def create_ultra_precise_mask(img_array, color, segments):
-    """Tworzy perfekcyjną maskę koloru dla cartoon-style"""
+    """Tworzy perfekcyjną maskę koloru z usuwaniem szumów i artefaktów"""
     try:
         height, width = img_array.shape[:2]
         color_array = np.array(color)
         
-        # Multi-metodowa ultra precyzyjna detekcja
+        # Multi-metodowa ultra precyzyjna detekcja z redukcją szumów
         masks = []
         
         # 1. Najbardziej precyzyjna odległość RGB z adaptacyjnym progiem
         rgb_diff = np.sqrt(np.sum((img_array - color_array)**2, axis=2))
         
-        # Inteligentny adaptacyjny próg bazujący na rozkładzie kolorów
-        hist, bins = np.histogram(rgb_diff, bins=100)
+        # Zaawansowana analiza histogramu dla lepszego progu
+        hist, bins = np.histogram(rgb_diff, bins=200)
         
-        # Znajdź pierwszy znaczący spadek w histogramie
+        # Znajdź najlepszy próg używając analizy gradientu
         cumsum = np.cumsum(hist)
         total_pixels = cumsum[-1]
         
-        # Użyj bardziej precyzyjnego progu
-        for i, cum_count in enumerate(cumsum):
-            if cum_count > total_pixels * 0.15:  # 15% najbliższych pikseli
-                threshold = bins[i]
-                break
-        else:
-            threshold = np.percentile(rgb_diff, 25)
+        # Dynamiczny próg bazujący na nasyceniu koloru
+        saturation = max(color) - min(color)
+        brightness = sum(color) / 3
         
+        if saturation > 100:  # Wysoko nasycone kolory - bardziej restrykcyjny próg
+            percentile_threshold = 8
+        elif saturation > 50:  # Średnio nasycone
+            percentile_threshold = 12
+        else:  # Nisko nasycone kolory - bardziej liberalny próg
+            percentile_threshold = 18
+        
+        # Dodatkowa regulacja dla jasności
+        if brightness < 50:  # Ciemne kolory
+            percentile_threshold *= 0.8
+        elif brightness > 200:  # Jasne kolory
+            percentile_threshold *= 1.2
+        
+        threshold = np.percentile(rgb_diff, percentile_threshold)
         mask1 = rgb_diff <= threshold
         masks.append(mask1)
         
-        # 2. Ulepszona analiza w przestrzeni HSV z wagami
+        # 2. Ulepszona analiza w przestrzeni LAB (lepiej dla percepcji kolorów)
         try:
+            from skimage.color import rgb2lab
+            lab_img = rgb2lab(img_array / 255.0)
+            lab_color = rgb2lab(color_array.reshape(1, 1, 3) / 255.0)[0, 0]
+            
+            # Delta E - profesjonalna miara różnicy kolorów
+            l_diff = (lab_img[:,:,0] - lab_color[0]) / 100.0  # Normalizuj L
+            a_diff = (lab_img[:,:,1] - lab_color[1]) / 127.0  # Normalizuj a
+            b_diff = (lab_img[:,:,2] - lab_color[2]) / 127.0  # Normalizuj b
+            
+            # Ważona odległość LAB
+            lab_distance = np.sqrt(l_diff**2 + 2*a_diff**2 + 2*b_diff**2)
+            lab_threshold = np.percentile(lab_distance, percentile_threshold * 0.7)
+            mask2 = lab_distance <= lab_threshold
+            masks.append(mask2)
+        except:
+            # Fallback do HSV
             hsv_img = rgb_to_hsv_ultra_precise(img_array)
             hsv_color = rgb_to_hsv_ultra_precise(color_array.reshape(1, 1, 3))[0, 0]
             
-            # Bardzo precyzyjna ważona odległość HSV
             h_diff = np.minimum(
                 np.abs(hsv_img[:,:,0] - hsv_color[0]),
-                1.0 - np.abs(hsv_img[:,:,0] - hsv_color[0])  # Uwzględnij cykliczność hue
+                1.0 - np.abs(hsv_img[:,:,0] - hsv_color[0])
             )
             s_diff = np.abs(hsv_img[:,:,1] - hsv_color[1])
             v_diff = np.abs(hsv_img[:,:,2] - hsv_color[2])
             
-            # Adaptacyjne wagi w zależności od nasycenia
-            saturation = hsv_color[1]
-            if saturation > 0.7:  # Wysokie nasycenie - hue jest ważniejsze
-                hsv_distance = np.sqrt(4*h_diff**2 + 2*s_diff**2 + v_diff**2)
-            elif saturation < 0.3:  # Niskie nasycenie - value jest ważniejsze
-                hsv_distance = np.sqrt(h_diff**2 + s_diff**2 + 3*v_diff**2)
-            else:  # Średnie nasycenie - balans
-                hsv_distance = np.sqrt(2*h_diff**2 + 2*s_diff**2 + 2*v_diff**2)
-            
-            hsv_threshold = np.percentile(hsv_distance, 18)
+            hsv_distance = np.sqrt(3*h_diff**2 + 2*s_diff**2 + v_diff**2)
+            hsv_threshold = np.percentile(hsv_distance, percentile_threshold * 0.8)
             mask2 = hsv_distance <= hsv_threshold
             masks.append(mask2)
-        except:
-            pass
         
-        # 3. Ulepszona maska bazująca na segmentacji
+        # 3. Kontekstowa maska bazująca na segmentacji
         if segments is not None:
-            mask3 = create_advanced_segment_mask(img_array, color_array, segments)
+            mask3 = create_noise_resistant_segment_mask(img_array, color_array, segments)
             if mask3 is not None:
                 masks.append(mask3)
         
-        # 4. Maska uwzględniająca lokalne kolory
-        local_mask = create_local_color_mask(img_array, color_array)
-        if local_mask is not None:
-            masks.append(local_mask)
+        # 4. Maska uwzględniająca lokalne sąsiedztwo
+        neighborhood_mask = create_neighborhood_coherence_mask(img_array, color_array)
+        if neighborhood_mask is not None:
+            masks.append(neighborhood_mask)
         
-        # 5. Maska bazująca na podobieństwie tekstury
-        texture_mask = create_texture_similarity_mask(img_array, color_array)
-        if texture_mask is not None:
-            masks.append(texture_mask)
-        
-        # Inteligentne kombinowanie masek
+        # Inteligentne kombinowanie masek z redukcją szumów
         if len(masks) > 0:
-            # Głosowanie większościowe z wagami
+            # Głosowanie większościowe z wagami i filtracją szumów
             combined_mask = np.zeros_like(masks[0], dtype=float)
-            weights = [1.0, 0.8, 0.6, 0.5, 0.4]  # Wagi dla różnych metod
+            weights = [1.0, 0.9, 0.7, 0.5]  # Zoptymalizowane wagi
             
             for i, mask in enumerate(masks):
                 weight = weights[i] if i < len(weights) else 0.3
                 combined_mask += mask.astype(float) * weight
             
-            # Próg dla decyzji końcowej (większość ważona)
-            final_mask = combined_mask >= (sum(weights[:len(masks)]) * 0.4)
+            # Próg dla decyzji końcowej z redukcją szumów
+            total_weight = sum(weights[:len(masks)])
+            confidence_threshold = total_weight * 0.6  # Wyższy próg pewności
+            
+            final_mask = combined_mask >= confidence_threshold
+            
+            # Zaawansowane usuwanie szumów i artefaktów
+            final_mask = remove_noise_and_artifacts(final_mask, img_array, color_array)
             
             return final_mask
         
@@ -1102,6 +1174,182 @@ def create_texture_similarity_mask(img_array, color_array):
     except:
         return None
 
+def create_noise_resistant_segment_mask(img_array, color_array, segments):
+    """Tworzy maskę bazującą na segmentach z odpornością na szumy"""
+    try:
+        mask = np.zeros(img_array.shape[:2], dtype=bool)
+        
+        for seg_id in np.unique(segments):
+            seg_mask = segments == seg_id
+            seg_pixels = img_array[seg_mask]
+            
+            if len(seg_pixels) > 20:  # Zwiększony próg dla redukcji szumów
+                # Sprawdź średni kolor segmentu z większą precyzją
+                seg_mean_color = np.mean(seg_pixels, axis=0)
+                seg_std_color = np.std(seg_pixels, axis=0)
+                
+                # Delta E w przestrzeni RGB z kompensacją odchylenia
+                mean_distance = np.sqrt(np.sum((seg_mean_color - color_array)**2))
+                color_variance = np.mean(seg_std_color)
+                
+                # Sprawdź odsetek podobnych pikseli w segmencie
+                distances = np.sqrt(np.sum((seg_pixels - color_array)**2, axis=1))
+                
+                # Adaptacyjny próg bazujący na wariancji koloru w segmencie
+                adaptive_threshold = 25 + color_variance * 0.5
+                similar_ratio = np.sum(distances < adaptive_threshold) / len(seg_pixels)
+                
+                # Decyzja na podstawie średniej, wariancji i stosunku
+                confidence_score = 0
+                if mean_distance < 30:
+                    confidence_score += 0.4
+                if similar_ratio > 0.3:
+                    confidence_score += 0.4
+                if color_variance < 15:  # Jednolity segment
+                    confidence_score += 0.2
+                
+                # Dodatkowy bonus dla większych segmentów (mniej prawdopodobne szumy)
+                if len(seg_pixels) > 100:
+                    confidence_score += 0.1
+                
+                if confidence_score >= 0.6:
+                    mask[seg_mask] = True
+        
+        return mask if np.sum(mask) > 0 else None
+    except:
+        return None
+
+def create_neighborhood_coherence_mask(img_array, color_array):
+    """Tworzy maskę bazującą na spójności sąsiedztwa - redukuje artefakty"""
+    try:
+        from scipy import ndimage
+        
+        # Podstawowa maska podobieństwa
+        distances = np.sqrt(np.sum((img_array - color_array)**2, axis=2))
+        base_mask = distances < 35
+        
+        if np.sum(base_mask) == 0:
+            return None
+        
+        # Analiza spójności lokalnej (5x5 sąsiedztwo)
+        kernel = np.ones((5, 5))
+        local_density = ndimage.convolve(base_mask.astype(float), kernel, mode='constant')
+        
+        # Piksele z wysoką gęstością sąsiadów tego samego koloru
+        coherent_areas = local_density >= 8  # Minimum 8/25 podobnych pikseli w sąsiedztwie
+        
+        # Kombinuj z bazową maską
+        coherent_mask = base_mask & coherent_areas
+        
+        # Rozszerz spójne obszary na bliskie piksele
+        extended_mask = ndimage.binary_dilation(coherent_mask, structure=np.ones((3, 3)), iterations=1)
+        
+        # Sprawdź czy rozszerzone obszary są rzeczywiście podobne
+        extended_pixels_coords = np.where(extended_mask & ~coherent_mask)
+        if len(extended_pixels_coords[0]) > 0:
+            extended_pixels = img_array[extended_pixels_coords]
+            ext_distances = np.sqrt(np.sum((extended_pixels - color_array)**2, axis=1))
+            
+            # Usuń piksele które są zbyt różne
+            invalid_extension = ext_distances > 45
+            for i, is_invalid in enumerate(invalid_extension):
+                if is_invalid:
+                    extended_mask[extended_pixels_coords[0][i], extended_pixels_coords[1][i]] = False
+        
+        return extended_mask
+    except:
+        return None
+
+def remove_noise_and_artifacts(mask, img_array, color_array):
+    """Zaawansowane usuwanie szumów i artefaktów z maski"""
+    try:
+        from scipy import ndimage
+        
+        # 1. Usuń pojedyncze piksele (szum punktowy)
+        structure = np.ones((3, 3))
+        opened = ndimage.binary_opening(mask, structure=structure, iterations=1)
+        
+        # 2. Wypełnij małe dziury
+        filled = ndimage.binary_fill_holes(opened)
+        
+        # 3. Usuń bardzo małe komponenty (artefakty)
+        labeled, num_features = ndimage.label(filled)
+        
+        if num_features > 0:
+            # Oblicz rozmiary komponentów
+            component_sizes = ndimage.sum(filled, labeled, range(1, num_features + 1))
+            total_area = np.sum(filled)
+            
+            # Usuń komponenty mniejsze niż 0.5% całkowitego obszaru lub mniejsze niż 10 pikseli
+            min_component_size = max(10, total_area * 0.005)
+            
+            cleaned_mask = np.zeros_like(mask)
+            for i in range(1, num_features + 1):
+                if component_sizes[i-1] >= min_component_size:
+                    component = labeled == i
+                    
+                    # Dodatkowa weryfikacja spójności kolorowej komponentu
+                    component_pixels = img_array[component]
+                    if len(component_pixels) > 0:
+                        mean_distance = np.mean(np.sqrt(np.sum((component_pixels - color_array)**2, axis=1)))
+                        
+                        # Zachowaj tylko komponenty o dobrej spójności kolorowej
+                        if mean_distance < 50:
+                            cleaned_mask[component] = True
+        else:
+            cleaned_mask = filled
+        
+        # 4. Końcowe wygładzenie krawędzi
+        smoothed = ndimage.binary_closing(cleaned_mask, structure=structure, iterations=1)
+        
+        # 5. Usuń cienkie "mosty" które mogą być artefaktami
+        thinned = remove_thin_bridges(smoothed)
+        
+        return thinned
+        
+    except Exception as e:
+        print(f"Błąd w remove_noise_and_artifacts: {e}")
+        return mask
+
+def remove_thin_bridges(mask):
+    """Usuwa cienkie mosty które często są artefaktami"""
+    try:
+        from scipy import ndimage
+        from skimage import morphology
+        
+        # Znajdź szkielet maski
+        skeleton = morphology.skeletonize(mask)
+        
+        # Znajdź punkty rozgałęzienia (gdzie łączą się różne części)
+        # Użyj kernela 3x3 do wykrycia punktów z więcej niż 2 sąsiadami
+        kernel = np.array([[1, 1, 1],
+                          [1, 0, 1],
+                          [1, 1, 1]])
+        
+        neighbor_count = ndimage.convolve(skeleton.astype(int), kernel, mode='constant')
+        branch_points = (skeleton & (neighbor_count > 2))
+        
+        # Jeśli jest mało punktów rozgałęzienia, prawdopodobnie nie ma problemów
+        if np.sum(branch_points) < 3:
+            return mask
+        
+        # Erozja z małym kernelem, potem dylatacja - usuwa cienkie połączenia
+        eroded = ndimage.binary_erosion(mask, structure=np.ones((2, 2)), iterations=1)
+        restored = ndimage.binary_dilation(eroded, structure=np.ones((2, 2)), iterations=1)
+        
+        # Sprawdź czy nie usunęliśmy zbyt wiele
+        original_area = np.sum(mask)
+        restored_area = np.sum(restored)
+        
+        # Jeśli ubytek jest zbyt duży, zwróć oryginalną maskę
+        if restored_area < original_area * 0.7:
+            return mask
+        
+        return restored
+        
+    except:
+        return mask
+
 def rgb_to_hsv_precise(rgb):
     """Precyzyjna konwersja RGB do HSV"""
     try:
@@ -1196,28 +1444,67 @@ def create_edge_aware_mask(img_array, color_array):
         return None
 
 def preserve_detail_processing(mask, initial_pixels):
-    """Przetwarzanie z zachowaniem szczegółów"""
+    """Przetwarzanie z zachowaniem szczegółów i usuwaniem artefaktów"""
     try:
         from scipy import ndimage
         
-        # Minimalne czyszczenie - tylko usunięcie pojedynczych pikseli
-        if initial_pixels > 1000:
-            # Dla większych regionów - delikatne czyszczenie
+        # Zaawansowane czyszczenie z zachowaniem szczegółów
+        if initial_pixels > 2000:
+            # Dla większych regionów - bardziej agresywne czyszczenie
             structure = np.ones((3, 3))
-            mask = ndimage.binary_closing(mask, structure=structure, iterations=1)
-            # Usuń bardzo małe komponenty (< 0.1% regionu)
+            
+            # 1. Zamknij małe dziury
+            mask = ndimage.binary_closing(mask, structure=structure, iterations=2)
+            
+            # 2. Usuń szum punktowy
+            mask = ndimage.binary_opening(mask, structure=structure, iterations=1)
+            
+            # 3. Inteligentne usuwanie małych komponentów
             labeled, num_features = ndimage.label(mask)
-            min_size = max(2, initial_pixels // 1000)
+            component_sizes = []
+            
+            for i in range(1, num_features + 1):
+                size = np.sum(labeled == i)
+                component_sizes.append(size)
+            
+            if component_sizes:
+                # Usuń komponenty mniejsze niż 0.5% największego komponentu
+                max_component_size = max(component_sizes)
+                min_size = max(5, max_component_size * 0.005, initial_pixels // 500)
+                
+                for i in range(1, num_features + 1):
+                    if component_sizes[i-1] < min_size:
+                        mask[labeled == i] = False
+                        
+        elif initial_pixels > 500:
+            # Dla średnich regionów - umiarkowane czyszczenie
+            structure = np.ones((3, 3))
+            
+            # Usuń pojedyncze piksele i małe skupiska
+            mask = ndimage.binary_opening(mask, structure=structure, iterations=1)
+            
+            labeled, num_features = ndimage.label(mask)
+            min_size = max(3, initial_pixels // 200)
+            
             for i in range(1, num_features + 1):
                 if np.sum(labeled == i) < min_size:
                     mask[labeled == i] = False
+                    
         else:
-            # Dla mniejszych regionów - minimalne przetwarzanie
-            # Tylko usuń pojedyncze piksele
+            # Dla małych regionów - bardzo delikatne czyszczenie
+            # Usuń tylko pojedyncze izolowane piksele
             labeled, num_features = ndimage.label(mask)
             for i in range(1, num_features + 1):
-                if np.sum(labeled == i) == 1:
-                    mask[labeled == i] = False
+                component = labeled == i
+                if np.sum(component) <= 2:  # Usuń tylko bardzo małe artefakty
+                    # Sprawdź czy to rzeczywiście artefakt (izolowany)
+                    dilated = ndimage.binary_dilation(component, iterations=2)
+                    overlap = np.sum(dilated & (mask & ~component))
+                    if overlap < 3:  # Bardzo mało połączeń z resztą
+                        mask[component] = False
+        
+        # Końcowe wypełnienie małych dziur
+        mask = ndimage.binary_fill_holes(mask)
         
         return mask
         
