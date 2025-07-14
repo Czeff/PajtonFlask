@@ -100,80 +100,412 @@ def enhance_cartoon_precision_ultra(img):
         print(f"Błąd w enhance_cartoon_precision_ultra: {e}")
         return img
 
-def detect_edge_density(img_array):
-    """Wykrywa gęstość krawędzi w obrazie"""
+def detect_edge_density_advanced(img_array):
+    """Zaawansowane wykrywanie gęstości krawędzi z wieloma filtrami"""
     try:
         from scipy import ndimage
         gray = np.mean(img_array, axis=2)
-        edges = ndimage.sobel(gray)
-        return np.mean(np.abs(edges)) / 255.0
+        
+        # Różne operatory krawędzi
+        sobel_h = ndimage.sobel(gray, axis=0)
+        sobel_v = ndimage.sobel(gray, axis=1)
+        sobel_combined = np.sqrt(sobel_h**2 + sobel_v**2)
+        
+        # Laplacian dla wykrywania cienkich linii
+        laplacian = ndimage.laplace(gray)
+        
+        # Gradient magnitude
+        grad_mag = np.sqrt(sobel_h**2 + sobel_v**2)
+        
+        # Kombinuj wyniki z wagami
+        edge_density = (
+            np.mean(sobel_combined) * 0.4 +
+            np.mean(np.abs(laplacian)) * 0.3 +
+            np.mean(grad_mag) * 0.3
+        ) / 255.0
+        
+        return min(1.0, edge_density)
     except:
         return 0.1
 
-def detect_color_complexity(img_array):
-    """Wykrywa złożoność kolorową obrazu"""
+def detect_edge_sharpness(img_array):
+    """Wykrywa ostrość krawędzi"""
     try:
-        # Zlicz unikalne kolory w zmniejszonym obrazie
-        small = img_array[::4, ::4]
-        colors = np.unique(small.reshape(-1, 3), axis=0)
-        return len(colors)
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # Drugi gradient dla ostrości
+        laplacian = ndimage.laplace(gray)
+        variance = np.var(laplacian)
+        
+        return min(1.0, variance / 10000.0)
+    except:
+        return 0.5
+
+def detect_edge_connectivity(img_array):
+    """Wykrywa łączność krawędzi (ciągłość linii)"""
+    try:
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # Wykryj krawędzie
+        edges = ndimage.sobel(gray)
+        edge_mask = edges > np.percentile(edges, 85)
+        
+        # Policz komponenty połączone
+        labeled, num_features = ndimage.label(edge_mask)
+        
+        if num_features == 0:
+            return 0.0
+            
+        # Większa liczba małych komponentów = mniejsza łączność
+        component_sizes = [np.sum(labeled == i) for i in range(1, num_features + 1)]
+        avg_component_size = np.mean(component_sizes)
+        total_edge_pixels = np.sum(edge_mask)
+        
+        connectivity = min(1.0, avg_component_size / max(1, total_edge_pixels / num_features))
+        return connectivity
+    except:
+        return 0.5
+
+def detect_color_complexity_advanced(img_array):
+    """Zaawansowana analiza złożoności kolorów"""
+    try:
+        # Analiza w różnych skalach
+        complexities = []
+        
+        for scale in [1, 2, 4]:
+            scaled = img_array[::scale, ::scale]
+            
+            # Unikalne kolory w przestrzeni LAB
+            try:
+                from skimage.color import rgb2lab
+                lab_img = rgb2lab(scaled / 255.0)
+                
+                # Kvantyzacja w przestrzeni LAB
+                lab_quantized = np.round(lab_img * 10) / 10
+                unique_colors = np.unique(lab_quantized.reshape(-1, 3), axis=0)
+                complexities.append(len(unique_colors))
+            except:
+                # Fallback do RGB
+                unique_colors = np.unique(scaled.reshape(-1, 3), axis=0)
+                complexities.append(len(unique_colors))
+        
+        return max(complexities)
     except:
         return 100
 
+def detect_color_variance(img_array):
+    """Wykrywa wariancję kolorów"""
+    try:
+        # Wariancja w każdym kanale
+        var_r = np.var(img_array[:,:,0])
+        var_g = np.var(img_array[:,:,1])
+        var_b = np.var(img_array[:,:,2])
+        
+        total_variance = (var_r + var_g + var_b) / 3
+        normalized_variance = total_variance / (255.0 ** 2)
+        
+        return min(1.0, normalized_variance * 4)
+    except:
+        return 0.5
+
+def detect_color_gradients(img_array):
+    """Wykrywa obecność gradientów kolorów"""
+    try:
+        from scipy import ndimage
+        
+        gradient_magnitudes = []
+        
+        for channel in range(3):
+            grad_x = ndimage.sobel(img_array[:,:,channel], axis=1)
+            grad_y = ndimage.sobel(img_array[:,:,channel], axis=0)
+            grad_mag = np.sqrt(grad_x**2 + grad_y**2)
+            gradient_magnitudes.append(np.mean(grad_mag))
+        
+        avg_gradient = np.mean(gradient_magnitudes) / 255.0
+        return min(1.0, avg_gradient * 2)
+    except:
+        return 0.3
+
+def detect_texture_complexity(img_array):
+    """Wykrywa złożoność tekstur"""
+    try:
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # Analiza tekstury przez filtry Gabora (symulowane)
+        texture_responses = []
+        
+        # Różne kierunki i częstotliwości
+        for angle in [0, 45, 90, 135]:
+            for sigma in [1, 2, 4]:
+                # Symulacja filtra Gabora przez gradient kierunkowy
+                if angle == 0:
+                    filtered = ndimage.sobel(gray, axis=1)
+                elif angle == 45:
+                    filtered = ndimage.sobel(gray, axis=0) + ndimage.sobel(gray, axis=1)
+                elif angle == 90:
+                    filtered = ndimage.sobel(gray, axis=0)
+                else:  # 135
+                    filtered = ndimage.sobel(gray, axis=0) - ndimage.sobel(gray, axis=1)
+                
+                # Gaussian blur dla różnych skal
+                blurred = ndimage.gaussian_filter(filtered, sigma=sigma)
+                texture_responses.append(np.std(blurred))
+        
+        texture_complexity = np.mean(texture_responses) / 255.0
+        return min(1.0, texture_complexity * 3)
+    except:
+        return 0.3
+
+def detect_pattern_regularity(img_array):
+    """Wykrywa regularność wzorów"""
+    try:
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # Autokorelacja dla wykrywania powtarzających się wzorów
+        h, w = gray.shape
+        
+        # Zmniejsz obraz dla wydajności
+        if h > 200 or w > 200:
+            scale = min(200/h, 200/w)
+            new_h, new_w = int(h*scale), int(w*scale)
+            gray = ndimage.zoom(gray, (new_h/h, new_w/w))
+        
+        # Prosta autokorelacja
+        mean_val = np.mean(gray)
+        centered = gray - mean_val
+        
+        # Oblicz autokorelację dla małych przesunięć
+        autocorr_values = []
+        for dx in range(-5, 6):
+            for dy in range(-5, 6):
+                if dx == 0 and dy == 0:
+                    continue
+                    
+                shifted = np.roll(np.roll(centered, dx, axis=1), dy, axis=0)
+                correlation = np.mean(centered * shifted)
+                autocorr_values.append(abs(correlation))
+        
+        regularity = np.mean(autocorr_values) / max(1, np.var(gray))
+        return min(1.0, regularity)
+    except:
+        return 0.2
+
+def detect_geometric_shapes(img_array):
+    """Wykrywa obecność kształtów geometrycznych"""
+    try:
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # Wykryj krawędzie
+        edges = ndimage.sobel(gray)
+        edge_mask = edges > np.percentile(edges, 90)
+        
+        # Oblicz krzywizny (symulacja przez angles)
+        shape_complexity = 0
+        
+        labeled, num_features = ndimage.label(edge_mask)
+        
+        for i in range(1, min(num_features + 1, 20)):  # Ogranicz do 20 komponentów
+            component = labeled == i
+            
+            if np.sum(component) < 20:
+                continue
+                
+            # Znajdź kontury komponentu
+            y_coords, x_coords = np.where(component)
+            
+            if len(y_coords) > 10:
+                # Prosta analiza kształtu przez bounding box
+                bbox_area = (np.max(y_coords) - np.min(y_coords)) * (np.max(x_coords) - np.min(x_coords))
+                actual_area = len(y_coords)
+                
+                if bbox_area > 0:
+                    shape_ratio = actual_area / bbox_area
+                    shape_complexity += (1 - shape_ratio)  # Mniej regularne = więcej złożoności
+        
+        return min(1.0, shape_complexity / max(1, num_features))
+    except:
+        return 0.3
+
+def detect_curve_complexity(img_array):
+    """Wykrywa złożoność krzywych"""
+    try:
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # Drugi gradient dla krzywizny
+        grad_x = ndimage.sobel(gray, axis=1)
+        grad_y = ndimage.sobel(gray, axis=0)
+        
+        # Pochodne drugiego rzędu
+        grad_xx = ndimage.sobel(grad_x, axis=1)
+        grad_yy = ndimage.sobel(grad_y, axis=0)
+        grad_xy = ndimage.sobel(grad_x, axis=0)
+        
+        # Krzywizna gaussowska (aproksymacja)
+        curvature = grad_xx * grad_yy - grad_xy**2
+        
+        curve_complexity = np.std(curvature) / 255.0
+        return min(1.0, curve_complexity * 2)
+    except:
+        return 0.3
+
+def calculate_perceptual_importance(img_array):
+    """Oblicza perceptualną ważność elementów obrazu"""
+    try:
+        from scipy import ndimage
+        
+        # Konwersja do jasności perceptualnej
+        luminance = 0.299 * img_array[:,:,0] + 0.587 * img_array[:,:,1] + 0.114 * img_array[:,:,2]
+        
+        # Kontrast lokalny
+        local_std = ndimage.uniform_filter(luminance**2, size=9) - ndimage.uniform_filter(luminance, size=9)**2
+        
+        # Wysokofrequencyjne komponenty
+        high_freq = luminance - ndimage.gaussian_filter(luminance, sigma=2)
+        
+        # Kombinuj miary
+        importance = np.mean(local_std) * 0.6 + np.std(high_freq) * 0.4
+        
+        normalized_importance = importance / (255.0 ** 2)
+        return min(1.0, normalized_importance * 3)
+    except:
+        return 0.5
+
+def calculate_detail_density(img_array):
+    """Oblicza gęstość szczegółów w obrazie"""
+    try:
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # Wieloskalowa analiza szczegółów
+        detail_maps = []
+        
+        for sigma in [0.5, 1.0, 2.0, 4.0]:
+            blurred = ndimage.gaussian_filter(gray, sigma=sigma)
+            details = np.abs(gray - blurred)
+            detail_maps.append(details)
+        
+        # Kombinuj szczegóły z różnych skal
+        combined_details = np.mean(detail_maps, axis=0)
+        
+        # Gęstość szczegółów
+        detail_density = np.mean(combined_details) / 255.0
+        return min(1.0, detail_density * 4)
+    except:
+        return 0.4
+
+def calculate_overall_complexity_score(edge_density, edge_sharpness, edge_connectivity,
+                                     color_complexity, color_variance, color_gradients,
+                                     texture_complexity, pattern_regularity,
+                                     geometric_complexity, curve_complexity,
+                                     perceptual_importance, detail_density):
+    """Oblicza ogólny wynik złożoności używając zaawansowanego algoritmu AI"""
+    try:
+        # Znormalizuj color_complexity
+        color_complexity_norm = min(1.0, color_complexity / 500.0)
+        
+        # Wagi dla różnych komponentów (zoptymalizowane dla jakości wektoryzacji)
+        weights = {
+            'edge': 0.25,
+            'color': 0.20,
+            'texture': 0.15,
+            'geometry': 0.15,
+            'perception': 0.15,
+            'detail': 0.10
+        }
+        
+        # Komponenty złożoności
+        edge_component = (edge_density * 0.4 + edge_sharpness * 0.4 + edge_connectivity * 0.2)
+        color_component = (color_complexity_norm * 0.4 + color_variance * 0.3 + color_gradients * 0.3)
+        texture_component = (texture_complexity * 0.7 + pattern_regularity * 0.3)
+        geometry_component = (geometric_complexity * 0.6 + curve_complexity * 0.4)
+        perception_component = perceptual_importance
+        detail_component = detail_density
+        
+        # Ważona suma
+        overall_score = (
+            edge_component * weights['edge'] +
+            color_component * weights['color'] +
+            texture_component * weights['texture'] +
+            geometry_component * weights['geometry'] +
+            perception_component * weights['perception'] +
+            detail_component * weights['detail']
+        )
+        
+        # Nieliniowa transformacja dla lepszego rozkładu
+        adjusted_score = np.power(overall_score, 0.8)
+        
+        return min(1.0, max(0.0, adjusted_score))
+    except:
+        return 0.5
+
 def extract_dominant_colors_advanced(image, max_colors=50, params=None):
-    """Ultra precyzyjna analiza kolorów z perfekcyjnym dopasowaniem cartoon-style"""
+    """AI-enhanced ultra precyzyjna analiza kolorów z maksymalną jakością"""
     try:
         img_array = np.array(image)
 
-        # Pobierz parametry jakości
-        quality_level = params.get('quality_enhancement', 'high') if params else 'high'
-        tolerance_factor = params.get('tolerance_factor', 0.8) if params else 0.8
+        # Pobierz zaawansowane parametry AI
+        quality_level = params.get('quality_enhancement', 'ai_high') if params else 'ai_high'
+        tolerance_factor = params.get('tolerance_factor', 0.3) if params else 0.3
+        edge_enhancement = params.get('edge_enhancement', True) if params else True
+        gradient_preservation = params.get('gradient_preservation', True) if params else True
+        micro_detail_preservation = params.get('micro_detail_preservation', False) if params else False
 
-        print(f"🎨 Analiza kolorów: jakość={quality_level}, tolerancja={tolerance_factor}, max_kolorów={max_colors}")
+        print(f"🎨 AI Color Analysis: jakość={quality_level}, tolerancja={tolerance_factor}, edge_enh={edge_enhancement}")
 
-        # Wielopoziomowa analiza kolorów z adaptacyjnymi parametrami
         colors = []
 
-        # 1. Precyzyjne wykrywanie kolorów dominujących - zwiększona precyzja
-        dominant_portion = max_colors // 2 if quality_level == 'maximum' else max_colors // 3
-        dominant_colors = extract_precise_dominant_colors(img_array, dominant_portion)
-        colors.extend(dominant_colors)
+        # 1. AI-ENHANCED DOMINANT COLORS - Największa precyzja
+        if 'ai_' in quality_level:
+            dominant_colors = extract_ai_enhanced_dominant_colors(img_array, max_colors // 2, params)
+            colors.extend(dominant_colors)
+            print(f"   🤖 AI dominant: {len(dominant_colors)} kolorów")
 
-        # 2. Analiza kolorów krawędzi (kluczowe dla cartoon-style) - zwiększona dla wysokiej jakości
-        edge_portion = max_colors // 3 if quality_level == 'maximum' else max_colors // 4
-        edge_colors = extract_edge_based_colors(img_array, edge_portion)
-        colors.extend(edge_colors)
+        # 2. MULTI-SCALE EDGE ANALYSIS - Kluczowe dla ostrych krawędzi
+        if edge_enhancement:
+            edge_colors = extract_multi_scale_edge_colors(img_array, max_colors // 4, params)
+            colors.extend(edge_colors)
+            print(f"   📐 Multi-scale edges: {len(edge_colors)} kolorów")
 
-        # 3. Analiza kolorów przejść i gradientów - tylko dla wysokiej jakości
-        if quality_level in ['maximum', 'high']:
-            gradient_colors = extract_gradient_colors(img_array, max_colors // 6)
+        # 3. GRADIENT PRESERVATION - Zachowanie płynnych przejść
+        if gradient_preservation:
+            gradient_colors = extract_advanced_gradient_colors(img_array, max_colors // 6, params)
             colors.extend(gradient_colors)
+            print(f"   🌈 Advanced gradients: {len(gradient_colors)} kolorów")
 
-        # 4. Wykrywanie kolorów małych obszarów - zwiększona precyzja
-        if quality_level == 'maximum':
-            detail_colors = extract_detail_colors(img_array, max_colors // 5)
-            colors.extend(detail_colors)
+        # 4. MICRO-DETAIL EXTRACTION - Najmniejsze szczegóły
+        if micro_detail_preservation:
+            micro_colors = extract_micro_detail_colors(img_array, max_colors // 8, params)
+            colors.extend(micro_colors)
+            print(f"   🔬 Micro details: {len(micro_colors)} kolorów")
 
-        # 5. Wykrywanie kolorów cieni i rozjaśnień
-        shadow_highlight_colors = extract_shadow_highlight_colors(img_array, max_colors // 8)
-        colors.extend(shadow_highlight_colors)
+        # 5. PERCEPTUAL COLOR MINING - Kolory ważne perceptualnie
+        perceptual_colors = extract_perceptual_important_colors(img_array, max_colors // 5, params)
+        colors.extend(perceptual_colors)
+        print(f"   👁️ Perceptual: {len(perceptual_colors)} kolorów")
 
-        # 6. K-means clustering z najwyższą precyzją
+        # 6. ADAPTIVE CLUSTERING - Zaawansowany klaster analysis
         if len(colors) < max_colors:
-            additional_colors = extract_high_precision_kmeans(img_array, max_colors - len(colors))
+            additional_colors = extract_adaptive_clustering_colors(img_array, max_colors - len(colors), params)
             colors.extend(additional_colors)
+            print(f"   🎯 Adaptive clustering: {len(additional_colors)} kolorów")
 
-        # Usuwanie duplikatów z dostosowaną tolerancją
-        final_colors = remove_similar_colors_ultra_precise(colors, max_colors, tolerance_factor)
+        # AI-POWERED COLOR REFINEMENT
+        final_colors = ai_powered_color_refinement(colors, max_colors, img_array, params)
 
-        # Sortowanie według ważności wizualnej w obrazie
-        final_colors = sort_colors_by_visual_importance(img_array, final_colors)
+        # INTELLIGENT COLOR SORTING
+        final_colors = intelligent_color_importance_sorting(img_array, final_colors, params)
 
-        print(f"🎨 Perfekcyjna analiza: {len(final_colors)} kolorów z maksymalną precyzją (jakość: {quality_level})")
+        print(f"🎨 AI Color Analysis Complete: {len(final_colors)} wysokiej jakości kolorów")
         return final_colors
 
     except Exception as e:
-        print(f"Błąd podczas perfekcyjnej analizy kolorów: {e}")
+        print(f"❌ Błąd AI color analysis: {e}")
         return extract_dominant_colors_simple(image, max_colors)
 
 def extract_dominant_colors_simple(image, max_colors=8):
@@ -611,6 +943,585 @@ def extract_high_precision_kmeans(img_array, max_colors):
     except:
         return []
 
+def extract_ai_enhanced_dominant_colors(img_array, max_colors, params):
+    """AI-enhanced extraction dominujących kolorów"""
+    try:
+        from sklearn.cluster import KMeans
+        
+        # Multi-resolution sampling dla lepszej reprezentacji
+        samples = []
+        
+        # Pełna rozdzielczość - najważniejsze piksele
+        height, width = img_array.shape[:2]
+        full_sample_rate = min(0.3, 100000 / (height * width))
+        if full_sample_rate > 0.01:
+            full_pixels = img_array.reshape(-1, 3)
+            step = max(1, int(1 / full_sample_rate))
+            samples.extend(full_pixels[::step])
+
+        # Średnia rozdzielczość - balance między jakością a wydajnością
+        medium_img = img_array[::2, ::2]
+        medium_pixels = medium_img.reshape(-1, 3)
+        if len(medium_pixels) > 5000:
+            step = len(medium_pixels) // 5000
+            samples.extend(medium_pixels[::step])
+        else:
+            samples.extend(medium_pixels)
+
+        # Niska rozdzielczość - globalne trendy
+        low_img = img_array[::4, ::4]
+        samples.extend(low_img.reshape(-1, 3))
+
+        if not samples:
+            return []
+
+        all_samples = np.array(samples)
+        
+        # AI-enhanced K-means z multiple iterations i optimization
+        best_colors = []
+        best_inertia = float('inf')
+        
+        for attempt in range(3):  # Multiple attempts for stability
+            try:
+                kmeans = KMeans(
+                    n_clusters=min(max_colors, len(all_samples)), 
+                    random_state=42 + attempt,
+                    n_init=20,
+                    max_iter=500,
+                    algorithm='lloyd',
+                    init='k-means++'
+                )
+                kmeans.fit(all_samples)
+                
+                if kmeans.inertia_ < best_inertia:
+                    best_inertia = kmeans.inertia_
+                    best_colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+            except:
+                continue
+        
+        return best_colors if best_colors else []
+    except:
+        return []
+
+def extract_multi_scale_edge_colors(img_array, max_colors, params):
+    """Multi-scale extraction kolorów z krawędzi"""
+    try:
+        from scipy import ndimage
+        colors = []
+        
+        # Różne skale dla wykrywania krawędzi
+        scales = [1.0, 1.5, 2.0, 3.0]
+        
+        for sigma in scales:
+            # Gaussian blur followed by edge detection
+            blurred = ndimage.gaussian_filter(img_array.astype(float), sigma=(sigma, sigma, 0))
+            
+            # Multi-channel edge detection
+            edges_combined = np.zeros(img_array.shape[:2])
+            
+            for channel in range(3):
+                grad_x = ndimage.sobel(blurred[:,:,channel], axis=1)
+                grad_y = ndimage.sobel(blurred[:,:,channel], axis=0)
+                edges_combined += np.sqrt(grad_x**2 + grad_y**2)
+            
+            # Adaptive threshold based on scale
+            threshold = np.percentile(edges_combined, 90 - sigma * 5)
+            edge_mask = edges_combined > threshold
+            
+            # Dilate edges to capture nearby colors
+            edge_mask = ndimage.binary_dilation(edge_mask, iterations=int(sigma))
+            
+            edge_pixels = img_array[edge_mask]
+            
+            if len(edge_pixels) > 50:
+                from sklearn.cluster import KMeans
+                n_clusters = min(max_colors // len(scales), len(edge_pixels) // 100, 8)
+                if n_clusters > 0:
+                    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                    kmeans.fit(edge_pixels)
+                    scale_colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+                    colors.extend(scale_colors)
+        
+        return colors[:max_colors]
+    except:
+        return []
+
+def extract_advanced_gradient_colors(img_array, max_colors, params):
+    """Zaawansowane wykrywanie kolorów gradientów"""
+    try:
+        from scipy import ndimage
+        colors = []
+        
+        # Analiza gradientów w przestrzeni LAB dla lepszej percepcji
+        try:
+            from skimage.color import rgb2lab, lab2rgb
+            lab_img = rgb2lab(img_array / 255.0)
+            
+            # Gradienty w każdym kanale LAB
+            gradient_maps = []
+            for channel in range(3):
+                grad_x = ndimage.sobel(lab_img[:,:,channel], axis=1)
+                grad_y = ndimage.sobel(lab_img[:,:,channel], axis=0)
+                gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+                gradient_maps.append(gradient_magnitude)
+            
+            # Kombinuj gradienty
+            combined_gradient = np.mean(gradient_maps, axis=0)
+            
+            # Wykryj obszary z wysokimi gradientami
+            gradient_threshold = np.percentile(combined_gradient, 75)
+            gradient_mask = combined_gradient > gradient_threshold
+            
+            # Rozszerz obszary gradientów
+            gradient_mask = ndimage.binary_dilation(gradient_mask, iterations=2)
+            
+            gradient_pixels = img_array[gradient_mask]
+            
+            if len(gradient_pixels) > 100:
+                # Clustering w przestrzeni LAB
+                lab_pixels = rgb2lab(gradient_pixels.reshape(-1, 1, 3) / 255.0).reshape(-1, 3)
+                
+                from sklearn.cluster import KMeans
+                n_clusters = min(max_colors, len(lab_pixels) // 50, 12)
+                if n_clusters > 0:
+                    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=15)
+                    kmeans.fit(lab_pixels)
+                    
+                    # Konwersja z powrotem do RGB
+                    for lab_color in kmeans.cluster_centers_:
+                        try:
+                            rgb = lab2rgb(lab_color.reshape(1, 1, 3))[0, 0] * 255
+                            rgb_color = tuple(np.clip(rgb, 0, 255).astype(int))
+                            colors.append(rgb_color)
+                        except:
+                            continue
+        except:
+            # Fallback do standardowej analizy RGB
+            return extract_gradient_colors(img_array, max_colors)
+        
+        return colors
+    except:
+        return []
+
+def extract_micro_detail_colors(img_array, max_colors, params):
+    """Wykrywanie kolorów z mikro-detali"""
+    try:
+        from scipy import ndimage
+        colors = []
+        
+        # High-frequency details detection
+        gray = np.mean(img_array, axis=2)
+        
+        # Multi-scale Laplacian for detail detection
+        detail_maps = []
+        for sigma in [0.5, 1.0, 1.5]:
+            blurred = ndimage.gaussian_filter(gray, sigma=sigma)
+            details = gray - blurred
+            detail_maps.append(np.abs(details))
+        
+        # Kombinuj mapy szczegółów
+        combined_details = np.mean(detail_maps, axis=0)
+        
+        # Znajdź obszary z wysokimi szczegółami
+        detail_threshold = np.percentile(combined_details, 85)
+        detail_mask = combined_details > detail_threshold
+        
+        # Dodatkowo sprawdź variance w lokalnym sąsiedztwie
+        local_variance = ndimage.uniform_filter(gray**2, size=3) - ndimage.uniform_filter(gray, size=3)**2
+        variance_threshold = np.percentile(local_variance, 80)
+        variance_mask = local_variance > variance_threshold
+        
+        # Kombinuj maski
+        micro_detail_mask = detail_mask | variance_mask
+        
+        # Rozszerz nieznacznie aby złapać kolory w pobliżu
+        micro_detail_mask = ndimage.binary_dilation(micro_detail_mask, iterations=1)
+        
+        micro_pixels = img_array[micro_detail_mask]
+        
+        if len(micro_pixels) > 30:
+            from sklearn.cluster import KMeans
+            n_clusters = min(max_colors, len(micro_pixels) // 20, 6)
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                kmeans.fit(micro_pixels)
+                colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        
+        return colors
+    except:
+        return []
+
+def extract_perceptual_important_colors(img_array, max_colors, params):
+    """Wykrywanie perceptualnie ważnych kolorów"""
+    try:
+        from scipy import ndimage
+        
+        # Konwersja do przestrzeni luminancji perceptualnej
+        luminance = 0.299 * img_array[:,:,0] + 0.587 * img_array[:,:,1] + 0.114 * img_array[:,:,2]
+        
+        # Obszary o wysokim kontraście lokalnym
+        local_contrast = ndimage.uniform_filter(luminance**2, size=5) - ndimage.uniform_filter(luminance, size=5)**2
+        contrast_mask = local_contrast > np.percentile(local_contrast, 75)
+        
+        # Obszary o wysokiej saturacji
+        saturation = np.max(img_array, axis=2) - np.min(img_array, axis=2)
+        saturation_mask = saturation > np.percentile(saturation, 70)
+        
+        # Obszary na krawędziach obrazu (często ważne perceptualnie)
+        height, width = img_array.shape[:2]
+        edge_region = np.zeros((height, width), dtype=bool)
+        border_width = min(height, width) // 20
+        edge_region[:border_width, :] = True
+        edge_region[-border_width:, :] = True
+        edge_region[:, :border_width] = True
+        edge_region[:, -border_width:] = True
+        
+        # Kombinuj maski ważności perceptualnej
+        importance_mask = contrast_mask | saturation_mask | edge_region
+        
+        important_pixels = img_array[importance_mask]
+        
+        colors = []
+        if len(important_pixels) > 50:
+            from sklearn.cluster import KMeans
+            n_clusters = min(max_colors, len(important_pixels) // 100, 10)
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=15)
+                kmeans.fit(important_pixels)
+                colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        
+        return colors
+    except:
+        return []
+
+def extract_adaptive_clustering_colors(img_array, max_colors, params):
+    """Adaptive clustering z automatycznym doborem parametrów"""
+    try:
+        from sklearn.cluster import KMeans
+        from sklearn.metrics import silhouette_score
+        
+        # Przygotuj dane
+        pixels = img_array.reshape(-1, 3)
+        
+        # Próbkowanie adaptacyjne
+        n_pixels = len(pixels)
+        if n_pixels > 50000:
+            sample_rate = 50000 / n_pixels
+            indices = np.random.choice(n_pixels, size=50000, replace=False)
+            sampled_pixels = pixels[indices]
+        else:
+            sampled_pixels = pixels
+        
+        # Znajdź optymalną liczbę klastrów
+        best_k = max_colors
+        best_score = -1
+        
+        for k in range(min(5, max_colors), min(max_colors + 1, 15)):
+            if k >= len(sampled_pixels):
+                break
+                
+            try:
+                kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+                labels = kmeans.fit_predict(sampled_pixels)
+                
+                if len(np.unique(labels)) > 1:
+                    score = silhouette_score(sampled_pixels, labels)
+                    if score > best_score:
+                        best_score = score
+                        best_k = k
+            except:
+                continue
+        
+        # Clustering z optymalną liczbą klastrów
+        kmeans = KMeans(n_clusters=best_k, random_state=42, n_init=20, max_iter=500)
+        kmeans.fit(sampled_pixels)
+        
+        colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        return colors[:max_colors]
+    except:
+        return []
+
+def ai_powered_color_refinement(colors, max_colors, img_array, params):
+    """AI-powered refinement kolorów z zaawansowanymi algorytmami"""
+    try:
+        if not colors:
+            return []
+        
+        tolerance_factor = params.get('tolerance_factor', 0.3) if params else 0.3
+        
+        # Usuń duplikaty z zaawansowaną tolerancją
+        refined_colors = advanced_color_deduplication(colors, tolerance_factor)
+        
+        # Intelligent color merging dla podobnych odcieni
+        merged_colors = intelligent_color_merging(refined_colors, img_array, tolerance_factor)
+        
+        # Validate colors against image content
+        validated_colors = validate_colors_against_image(merged_colors, img_array)
+        
+        # Ensure we don't exceed max_colors
+        final_colors = validated_colors[:max_colors]
+        
+        print(f"   🎯 Color refinement: {len(colors)} → {len(final_colors)} kolorów")
+        return final_colors
+    except:
+        return colors[:max_colors]
+
+def advanced_color_deduplication(colors, tolerance_factor):
+    """Zaawansowane usuwanie duplikatów kolorów"""
+    try:
+        if not colors:
+            return []
+        
+        final_colors = [colors[0]]
+        
+        for color in colors[1:]:
+            is_unique = True
+            
+            for existing in final_colors:
+                # Multi-space color distance
+                distance = calculate_multi_space_color_distance(color, existing)
+                
+                # Adaptive tolerance based on color properties
+                adaptive_tolerance = calculate_adaptive_tolerance(existing, tolerance_factor)
+                
+                if distance < adaptive_tolerance:
+                    is_unique = False
+                    break
+            
+            if is_unique:
+                final_colors.append(color)
+        
+        return final_colors
+    except:
+        return colors
+
+def calculate_multi_space_color_distance(color1, color2):
+    """Oblicza odległość kolorów w wielu przestrzeniach"""
+    try:
+        # RGB Euclidean
+        rgb_dist = np.sqrt(sum((a - b)**2 for a, b in zip(color1, color2)))
+        
+        # Weighted RGB (perceptual)
+        weighted_rgb_dist = np.sqrt(
+            0.3 * (color1[0] - color2[0])**2 +
+            0.59 * (color1[1] - color2[1])**2 +
+            0.11 * (color1[2] - color2[2])**2
+        )
+        
+        # HSV distance
+        hsv1 = rgb_to_hsv_precise(color1)
+        hsv2 = rgb_to_hsv_precise(color2)
+        
+        h_dist = min(abs(hsv1[0] - hsv2[0]), 1 - abs(hsv1[0] - hsv2[0])) if hsv1[1] > 0.1 and hsv2[1] > 0.1 else 0
+        s_dist = abs(hsv1[1] - hsv2[1])
+        v_dist = abs(hsv1[2] - hsv2[2])
+        
+        hsv_dist = np.sqrt(h_dist**2 + s_dist**2 + v_dist**2)
+        
+        # Kombinuj odległości
+        combined_distance = (rgb_dist * 0.4 + weighted_rgb_dist * 0.4 + hsv_dist * 100 * 0.2)
+        
+        return combined_distance
+    except:
+        return np.sqrt(sum((a - b)**2 for a, b in zip(color1, color2)))
+
+def rgb_to_hsv_precise(color):
+    """Precyzyjna konwersja RGB do HSV"""
+    try:
+        r, g, b = [x / 255.0 for x in color]
+        max_val = max(r, g, b)
+        min_val = min(r, g, b)
+        diff = max_val - min_val
+        
+        # Value
+        v = max_val
+        
+        # Saturation
+        s = 0 if max_val == 0 else diff / max_val
+        
+        # Hue
+        h = 0
+        if diff != 0:
+            if max_val == r:
+                h = (60 * ((g - b) / diff) + 360) % 360
+            elif max_val == g:
+                h = (60 * ((b - r) / diff) + 120) % 360
+            else:
+                h = (60 * ((r - g) / diff) + 240) % 360
+        
+        return [h / 360.0, s, v]
+    except:
+        return [0, 0, 0]
+
+def calculate_adaptive_tolerance(color, base_tolerance):
+    """Oblicza adaptacyjną tolerancję bazując na właściwościach koloru"""
+    try:
+        brightness = sum(color) / 3
+        saturation = (max(color) - min(color)) / 255.0
+        
+        # Mniejsza tolerancja dla ciemnych kolorów
+        brightness_factor = 0.8 if brightness < 50 else 1.0 if brightness < 150 else 1.2
+        
+        # Mniejsza tolerancja dla wysoko nasyconych kolorów
+        saturation_factor = 0.7 if saturation > 0.7 else 0.9 if saturation > 0.4 else 1.1
+        
+        adaptive_tolerance = base_tolerance * brightness_factor * saturation_factor * 100
+        
+        return max(5, min(50, adaptive_tolerance))
+    except:
+        return base_tolerance * 25
+
+def intelligent_color_merging(colors, img_array, tolerance_factor):
+    """Inteligentne łączenie podobnych kolorów"""
+    try:
+        if len(colors) <= 1:
+            return colors
+        
+        merged_colors = []
+        used_indices = set()
+        
+        for i, color in enumerate(colors):
+            if i in used_indices:
+                continue
+            
+            # Znajdź podobne kolory
+            similar_colors = [color]
+            similar_indices = [i]
+            
+            for j, other_color in enumerate(colors[i+1:], i+1):
+                if j in used_indices:
+                    continue
+                
+                distance = calculate_multi_space_color_distance(color, other_color)
+                merge_threshold = calculate_adaptive_tolerance(color, tolerance_factor) * 0.8
+                
+                if distance < merge_threshold:
+                    similar_colors.append(other_color)
+                    similar_indices.append(j)
+            
+            # Jeśli znaleziono podobne kolory, połącz je
+            if len(similar_colors) > 1:
+                # Weighted average based on importance in image
+                weights = []
+                for sim_color in similar_colors:
+                    weight = calculate_color_importance_in_image(sim_color, img_array)
+                    weights.append(weight)
+                
+                total_weight = sum(weights)
+                if total_weight > 0:
+                    merged_color = [0, 0, 0]
+                    for k, (sim_color, weight) in enumerate(zip(similar_colors, weights)):
+                        for channel in range(3):
+                            merged_color[channel] += sim_color[channel] * (weight / total_weight)
+                    
+                    merged_color = tuple(int(c) for c in merged_color)
+                else:
+                    merged_color = color
+                
+                merged_colors.append(merged_color)
+                used_indices.update(similar_indices)
+            else:
+                merged_colors.append(color)
+                used_indices.add(i)
+        
+        return merged_colors
+    except:
+        return colors
+
+def calculate_color_importance_in_image(color, img_array):
+    """Oblicza ważność koloru w obrazie"""
+    try:
+        # Policz piksele podobne do danego koloru
+        distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+        similar_pixels = np.sum(distances < 30)
+        
+        # Normalizuj przez całkowitą liczbę pikseli
+        total_pixels = img_array.shape[0] * img_array.shape[1]
+        importance = similar_pixels / total_pixels
+        
+        return importance
+    except:
+        return 1.0
+
+def validate_colors_against_image(colors, img_array):
+    """Waliduje kolory względem zawartości obrazu"""
+    try:
+        validated_colors = []
+        
+        for color in colors:
+            # Sprawdź czy kolor rzeczywiście występuje w obrazie
+            distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+            min_distance = np.min(distances)
+            
+            # Akceptuj kolor jeśli ma podobne piksele w obrazie
+            if min_distance < 50:  # Tolerancja na błędy kwantyzacji
+                validated_colors.append(color)
+        
+        return validated_colors if validated_colors else colors
+    except:
+        return colors
+
+def intelligent_color_importance_sorting(img_array, colors, params):
+    """Inteligentne sortowanie kolorów według ważności"""
+    try:
+        if not colors:
+            return colors
+        
+        color_scores = []
+        
+        for color in colors:
+            # Frequency score
+            distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+            frequency = np.sum(distances < 25)
+            
+            # Perceptual importance score
+            brightness = sum(color) / 3
+            saturation = (max(color) - min(color)) / 255.0
+            
+            perceptual_score = 1.0
+            if brightness < 30 or brightness > 225:  # Very dark or very bright
+                perceptual_score *= 1.2
+            if saturation > 0.7:  # High saturation
+                perceptual_score *= 1.1
+            
+            # Edge presence score
+            edge_score = calculate_color_edge_presence(color, img_array)
+            
+            # Combined score
+            total_score = frequency * 0.5 + perceptual_score * frequency * 0.3 + edge_score * 0.2
+            color_scores.append((total_score, color))
+        
+        # Sort by score (descending)
+        color_scores.sort(reverse=True)
+        
+        return [color for score, color in color_scores]
+    except:
+        return colors
+
+def calculate_color_edge_presence(color, img_array):
+    """Oblicza obecność koloru na krawędziach"""
+    try:
+        from scipy import ndimage
+        
+        # Wykryj krawędzie
+        gray = np.mean(img_array, axis=2)
+        edges = ndimage.sobel(gray)
+        edge_mask = edges > np.percentile(edges, 85)
+        
+        # Sprawdź obecność koloru na krawędziach
+        distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+        color_mask = distances < 30
+        
+        edge_color_overlap = np.sum(edge_mask & color_mask)
+        total_color_pixels = np.sum(color_mask)
+        
+        if total_color_pixels > 0:
+            return edge_color_overlap / total_color_pixels
+        
+        return 0
+    except:
+        return 0
+
 def get_color_hue(color):
     """Oblicza hue koloru"""
     try:
@@ -662,66 +1573,131 @@ def create_smooth_curve_path(contour):
         return create_simple_svg_path(contour)
 
 def analyze_image_complexity(image):
-    """Analizuje złożoność obrazu i dostosowuje parametry z maksymalnym priorytetem na szczegółowość"""
+    """Zaawansowana analiza złożoności obrazu z algorytmami AI do maksymalnej jakości"""
     try:
         img_array = np.array(image)
+        height, width = img_array.shape[:2]
 
-        # Oblicz wskaźniki złożoności
-        edge_density = detect_edge_density(img_array)
-        color_complexity = detect_color_complexity(img_array)
+        # 1. ZAAWANSOWANA ANALIZA KRAWĘDZI
+        edge_density = detect_edge_density_advanced(img_array)
+        edge_sharpness = detect_edge_sharpness(img_array)
+        edge_connectivity = detect_edge_connectivity(img_array)
 
-        # Oblicz entropię obrazu
-        from scipy.stats import entropy
-        hist, _ = np.histogram(img_array.flatten(), bins=256, range=(0, 256))
-        img_entropy = entropy(hist + 1e-10)  # Dodaj małą wartość aby uniknąć log(0)
+        # 2. ULTRA PRECYZYJNA ANALIZA KOLORÓW
+        color_complexity = detect_color_complexity_advanced(img_array)
+        color_variance = detect_color_variance(img_array)
+        color_gradients = detect_color_gradients(img_array)
 
-        print(f"📊 Analiza złożoności: krawędzie={edge_density:.3f}, kolory={color_complexity}, entropia={img_entropy:.3f}")
+        # 3. ANALIZA TEKSTUR I WZORÓW
+        texture_complexity = detect_texture_complexity(img_array)
+        pattern_regularity = detect_pattern_regularity(img_array)
 
-        # MAKSYMALNA SZCZEGÓŁOWOŚĆ: Drastycznie zwiększone parametry dla wierności oryginałowi
-        if edge_density > 0.08 and color_complexity > 100:
+        # 4. ANALIZA GEOMETRYCZNA
+        geometric_complexity = detect_geometric_shapes(img_array)
+        curve_complexity = detect_curve_complexity(img_array)
+
+        # 5. PERCEPTUALNA ANALIZA JAKOŚCI
+        perceptual_importance = calculate_perceptual_importance(img_array)
+        detail_density = calculate_detail_density(img_array)
+
+        print(f"🔬 Zaawansowana analiza:")
+        print(f"   📐 Krawędzie: gęstość={edge_density:.3f}, ostrość={edge_sharpness:.3f}, łączność={edge_connectivity:.3f}")
+        print(f"   🎨 Kolory: złożoność={color_complexity}, wariancja={color_variance:.3f}, gradienty={color_gradients:.3f}")
+        print(f"   🖼️ Tekstury: złożoność={texture_complexity:.3f}, regularność={pattern_regularity:.3f}")
+        print(f"   📊 Geometria: kształty={geometric_complexity:.3f}, krzywe={curve_complexity:.3f}")
+        print(f"   👁️ Percepcja: ważność={perceptual_importance:.3f}, szczegóły={detail_density:.3f}")
+
+        # ALGORYTM ADAPTACYJNEGO DOBORU PARAMETRÓW
+        complexity_score = calculate_overall_complexity_score(
+            edge_density, edge_sharpness, edge_connectivity,
+            color_complexity, color_variance, color_gradients,
+            texture_complexity, pattern_regularity,
+            geometric_complexity, curve_complexity,
+            perceptual_importance, detail_density
+        )
+
+        print(f"🎯 Wynik złożoności: {complexity_score:.3f} (0.0-1.0)")
+
+        # DYNAMICZNE PARAMETRY BAZUJĄCE NA AI SCORING
+        if complexity_score > 0.8:  # ULTRA-COMPLEX
             return {
-                'max_colors': 40,  # Drastycznie zwiększono dla maksymalnej szczegółowości
-                'tolerance_factor': 0.4,  # Bardzo wysoka precyzja
-                'detail_preservation': 'ultra_maximum',
-                'min_region_size': 1,  # Zachowaj każdy piksel
-                'color_flattening': False,  # Wyłącz spłaszczanie dla zachowania wszystkich odcieni
-                'quality_enhancement': 'ultra_maximum'
-            }
-        elif edge_density > 0.05 or color_complexity > 50:
-            return {
-                'max_colors': 32,  # Bardzo wysokie dla detali
-                'tolerance_factor': 0.45,
-                'detail_preservation': 'ultra_high',
+                'max_colors': 60,  # Maksymalna liczba kolorów
+                'tolerance_factor': 0.2,  # Najwyższa precyzja
+                'detail_preservation': 'ai_maximum',
                 'min_region_size': 1,
                 'color_flattening': False,
-                'quality_enhancement': 'maximum'
+                'quality_enhancement': 'ai_maximum',
+                'curve_smoothing': 'adaptive_ultra',
+                'edge_enhancement': True,
+                'micro_detail_preservation': True,
+                'gradient_preservation': True
             }
-        elif color_complexity > 25:
+        elif complexity_score > 0.65:  # VERY COMPLEX
             return {
-                'max_colors': 28,  # Wysokie dla średnich obrazów
-                'tolerance_factor': 0.5,
-                'detail_preservation': 'very_high',
+                'max_colors': 50,
+                'tolerance_factor': 0.25,
+                'detail_preservation': 'ai_ultra_high',
                 'min_region_size': 1,
                 'color_flattening': False,
-                'quality_enhancement': 'high'
+                'quality_enhancement': 'ai_ultra_high',
+                'curve_smoothing': 'adaptive_high',
+                'edge_enhancement': True,
+                'micro_detail_preservation': True,
+                'gradient_preservation': True
             }
-        else:
+        elif complexity_score > 0.5:  # COMPLEX
             return {
-                'max_colors': 24,  # Minimum dla prostych obrazów
-                'tolerance_factor': 0.55,
-                'detail_preservation': 'high',
+                'max_colors': 45,
+                'tolerance_factor': 0.3,
+                'detail_preservation': 'ai_high',
                 'min_region_size': 1,
                 'color_flattening': False,
-                'quality_enhancement': 'high'
+                'quality_enhancement': 'ai_high',
+                'curve_smoothing': 'adaptive',
+                'edge_enhancement': True,
+                'micro_detail_preservation': False,
+                'gradient_preservation': True
             }
-    except:
+        elif complexity_score > 0.35:  # MEDIUM
+            return {
+                'max_colors': 40,
+                'tolerance_factor': 0.35,
+                'detail_preservation': 'ai_medium',
+                'min_region_size': 2,
+                'color_flattening': False,
+                'quality_enhancement': 'ai_medium',
+                'curve_smoothing': 'balanced',
+                'edge_enhancement': True,
+                'micro_detail_preservation': False,
+                'gradient_preservation': False
+            }
+        else:  # SIMPLE
+            return {
+                'max_colors': 35,
+                'tolerance_factor': 0.4,
+                'detail_preservation': 'ai_standard',
+                'min_region_size': 3,
+                'color_flattening': False,
+                'quality_enhancement': 'ai_standard',
+                'curve_smoothing': 'standard',
+                'edge_enhancement': False,
+                'micro_detail_preservation': False,
+                'gradient_preservation': False
+            }
+
+    except Exception as e:
+        print(f"⚠️ Błąd analizy złożoności: {e}")
         return {
-            'max_colors': 32,  # Domyślnie wysokie dla szczegółowości
-            'tolerance_factor': 0.5,
-            'detail_preservation': 'ultra_high',
+            'max_colors': 45,
+            'tolerance_factor': 0.3,
+            'detail_preservation': 'ai_high',
             'min_region_size': 1,
             'color_flattening': False,
-            'quality_enhancement': 'maximum'
+            'quality_enhancement': 'ai_high',
+            'curve_smoothing': 'adaptive',
+            'edge_enhancement': True,
+            'micro_detail_preservation': True,
+            'gradient_preservation': True
         }
 
 def create_simple_svg_path(contour):
@@ -1337,31 +2313,861 @@ def trace_contours_simple(mask):
         return []
 
 def create_smooth_svg_path(contour):
-    """Tworzy ultra precyzyjną ścieżkę SVG z zachowaniem szczegółów oryginalnego kształtu"""
+    """AI-enhanced ultra precyzyjna ścieżka SVG z maksymalną jakością"""
     if len(contour) < 3:
         return None
 
     try:
-        # Minimalna analiza - zachowaj oryginalny kształt
-        contour_detail_level = analyze_contour_detail_level(contour)
+        # AI-enhanced contour analysis
+        contour_analysis = ai_enhanced_contour_analysis(contour)
+        
+        # Adaptive contour preservation
+        preserved_contour = adaptive_contour_preservation(contour, contour_analysis)
 
-        # Bardzo minimalne upraszczanie - zachowaj większość punktów
-        preserved_contour = preserve_contour_details(contour, contour_detail_level)
+        print(f"    📐 AI Contour: {len(contour)} → {len(preserved_contour)} punktów")
+        print(f"       🤖 Analiza: complexity={contour_analysis['complexity']:.2f}, curvature={contour_analysis['curvature']:.2f}")
 
-        print(f"    📐 Kontur: {len(contour)} → {len(preserved_contour)} punktów, szczegółowość: {contour_detail_level}")
-
-        # Wybierz metodę zachowującą szczegóły
-        if contour_detail_level == 'high':
-            path_data = create_high_fidelity_svg_path(preserved_contour)
-        elif contour_detail_level == 'medium':
-            path_data = create_balanced_svg_path(preserved_contour)
+        # AI-guided path generation
+        if contour_analysis['complexity'] > 0.8:
+            path_data = create_ai_maximum_fidelity_path(preserved_contour, contour_analysis)
+        elif contour_analysis['complexity'] > 0.6:
+            path_data = create_ai_high_fidelity_path(preserved_contour, contour_analysis)
+        elif contour_analysis['complexity'] > 0.4:
+            path_data = create_ai_balanced_path(preserved_contour, contour_analysis)
         else:
-            path_data = create_simple_accurate_svg_path(preserved_contour)
+            path_data = create_ai_optimized_path(preserved_contour, contour_analysis)
 
         return path_data
 
     except Exception as e:
-        print(f"Błąd podczas tworzenia precyzyjnej ścieżki SVG: {e}")
+        print(f"❌ Błąd AI path generation: {e}")
+        return create_simple_svg_path(contour)
+
+def ai_enhanced_contour_analysis(contour):
+    """AI-enhanced analiza konturu z wieloma metrykami"""
+    try:
+        if len(contour) < 3:
+            return {
+                'complexity': 0.1,
+                'curvature': 0.1,
+                'smoothness': 0.9,
+                'detail_density': 0.1,
+                'geometric_regularity': 0.9,
+                'optimization_strategy': 'simple'
+            }
+        
+        # 1. COMPLEXITY ANALYSIS
+        point_density = len(contour) / max(1, calculate_contour_perimeter(contour))
+        length_complexity = min(1.0, len(contour) / 100.0)
+        
+        # 2. CURVATURE ANALYSIS
+        curvature_variance = calculate_curvature_variance(contour)
+        sharp_angles = count_sharp_angles(contour)
+        
+        # 3. SMOOTHNESS ANALYSIS
+        smoothness = calculate_contour_smoothness(contour)
+        
+        # 4. DETAIL DENSITY
+        detail_density = calculate_detail_density_contour(contour)
+        
+        # 5. GEOMETRIC REGULARITY
+        geometric_regularity = calculate_geometric_regularity(contour)
+        
+        # 6. COMBINED COMPLEXITY SCORE
+        complexity_score = (
+            length_complexity * 0.25 +
+            curvature_variance * 0.25 +
+            (1 - smoothness) * 0.2 +
+            detail_density * 0.15 +
+            (1 - geometric_regularity) * 0.15
+        )
+        
+        # 7. OPTIMIZATION STRATEGY
+        if complexity_score > 0.8:
+            strategy = 'ai_maximum_preservation'
+        elif complexity_score > 0.6:
+            strategy = 'ai_high_preservation'
+        elif complexity_score > 0.4:
+            strategy = 'ai_balanced'
+        else:
+            strategy = 'ai_optimized'
+        
+        return {
+            'complexity': min(1.0, complexity_score),
+            'curvature': min(1.0, curvature_variance),
+            'smoothness': smoothness,
+            'detail_density': detail_density,
+            'geometric_regularity': geometric_regularity,
+            'optimization_strategy': strategy,
+            'point_density': point_density,
+            'sharp_angles': sharp_angles
+        }
+    except Exception as e:
+        print(f"⚠️ Błąd AI contour analysis: {e}")
+        return {
+            'complexity': 0.5,
+            'curvature': 0.5,
+            'smoothness': 0.5,
+            'detail_density': 0.5,
+            'geometric_regularity': 0.5,
+            'optimization_strategy': 'ai_balanced'
+        }
+
+def calculate_contour_perimeter(contour):
+    """Oblicza obwód konturu"""
+    try:
+        if len(contour) < 2:
+            return 1
+        
+        perimeter = 0
+        for i in range(len(contour)):
+            p1 = contour[i]
+            p2 = contour[(i + 1) % len(contour)]
+            distance = np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+            perimeter += distance
+        
+        return max(1, perimeter)
+    except:
+        return 1
+
+def calculate_curvature_variance(contour):
+    """Oblicza wariancję krzywizny konturu"""
+    try:
+        if len(contour) < 5:
+            return 0.1
+        
+        curvatures = []
+        
+        for i in range(2, len(contour) - 2):
+            # Trzy kolejne punkty
+            p1 = np.array(contour[i-1])
+            p2 = np.array(contour[i])
+            p3 = np.array(contour[i+1])
+            
+            # Wektory
+            v1 = p2 - p1
+            v2 = p3 - p2
+            
+            # Długości
+            len1 = np.linalg.norm(v1)
+            len2 = np.linalg.norm(v2)
+            
+            if len1 > 0 and len2 > 0:
+                # Kąt między wektorami
+                cos_angle = np.dot(v1, v2) / (len1 * len2)
+                cos_angle = np.clip(cos_angle, -1, 1)
+                angle = np.arccos(cos_angle)
+                
+                # Krzywizna jako zmiana kąta
+                curvature = angle / max(len1, len2)
+                curvatures.append(curvature)
+        
+        if curvatures:
+            return min(1.0, np.var(curvatures) * 10)
+        
+        return 0.1
+    except:
+        return 0.1
+
+def count_sharp_angles(contour, angle_threshold=np.pi/3):
+    """Liczy ostre kąty w konturze"""
+    try:
+        if len(contour) < 3:
+            return 0
+        
+        sharp_count = 0
+        
+        for i in range(1, len(contour) - 1):
+            p1 = np.array(contour[i-1])
+            p2 = np.array(contour[i])
+            p3 = np.array(contour[i+1])
+            
+            v1 = p1 - p2
+            v2 = p3 - p2
+            
+            len1 = np.linalg.norm(v1)
+            len2 = np.linalg.norm(v2)
+            
+            if len1 > 0 and len2 > 0:
+                cos_angle = np.dot(v1, v2) / (len1 * len2)
+                cos_angle = np.clip(cos_angle, -1, 1)
+                angle = np.arccos(cos_angle)
+                
+                if angle < angle_threshold:
+                    sharp_count += 1
+        
+        return sharp_count
+    except:
+        return 0
+
+def calculate_contour_smoothness(contour):
+    """Oblicza gładkość konturu"""
+    try:
+        if len(contour) < 4:
+            return 0.9
+        
+        direction_changes = []
+        
+        for i in range(2, len(contour)):
+            p1 = np.array(contour[i-2])
+            p2 = np.array(contour[i-1])
+            p3 = np.array(contour[i])
+            
+            v1 = p2 - p1
+            v2 = p3 - p2
+            
+            len1 = np.linalg.norm(v1)
+            len2 = np.linalg.norm(v2)
+            
+            if len1 > 0 and len2 > 0:
+                direction_change = np.linalg.norm(v2/len2 - v1/len1)
+                direction_changes.append(direction_change)
+        
+        if direction_changes:
+            avg_change = np.mean(direction_changes)
+            smoothness = 1.0 / (1.0 + avg_change)
+            return min(1.0, smoothness)
+        
+        return 0.9
+    except:
+        return 0.5
+
+def calculate_detail_density_contour(contour):
+    """Oblicza gęstość szczegółów w konturze"""
+    try:
+        if len(contour) < 5:
+            return 0.1
+        
+        # Analiza lokalnej wariancji pozycji
+        local_variances = []
+        window_size = min(5, len(contour) // 4)
+        
+        for i in range(window_size, len(contour) - window_size):
+            window_points = contour[i-window_size:i+window_size+1]
+            
+            # Oblicz wariancję pozycji w oknie
+            x_coords = [p[0] for p in window_points]
+            y_coords = [p[1] for p in window_points]
+            
+            x_var = np.var(x_coords)
+            y_var = np.var(y_coords)
+            
+            local_variance = (x_var + y_var) / 2
+            local_variances.append(local_variance)
+        
+        if local_variances:
+            avg_variance = np.mean(local_variances)
+            # Normalizacja zależna od rozmiaru konturu
+            normalized_variance = avg_variance / max(1, len(contour))
+            return min(1.0, normalized_variance / 100)
+        
+        return 0.1
+    except:
+        return 0.1
+
+def calculate_geometric_regularity(contour):
+    """Oblicza regularność geometryczną konturu"""
+    try:
+        if len(contour) < 4:
+            return 0.9
+        
+        # Analiza podobieństwa do podstawowych kształtów
+        
+        # 1. Test na prostokąt
+        rectangle_score = test_rectangle_similarity(contour)
+        
+        # 2. Test na elipsę/okrąg
+        ellipse_score = test_ellipse_similarity(contour)
+        
+        # 3. Test na wielokąt regularny
+        polygon_score = test_regular_polygon_similarity(contour)
+        
+        # Najwyższy wynik podobieństwa
+        max_regularity = max(rectangle_score, ellipse_score, polygon_score)
+        
+        return min(1.0, max_regularity)
+    except:
+        return 0.5
+
+def test_rectangle_similarity(contour):
+    """Testuje podobieństwo do prostokąta"""
+    try:
+        if len(contour) < 4:
+            return 0
+        
+        # Znajdź bounding box
+        x_coords = [p[0] for p in contour]
+        y_coords = [p[1] for p in contour]
+        
+        min_x, max_x = min(x_coords), max(x_coords)
+        min_y, max_y = min(y_coords), max(y_coords)
+        
+        # Punkty prostokąta
+        rect_points = [
+            (min_x, min_y), (max_x, min_y),
+            (max_x, max_y), (min_x, max_y)
+        ]
+        
+        # Oblicz średnią odległość od prostokąta
+        min_distances = []
+        for point in contour:
+            distances = [np.sqrt((point[0]-rp[0])**2 + (point[1]-rp[1])**2) for rp in rect_points]
+            min_distances.append(min(distances))
+        
+        avg_distance = np.mean(min_distances)
+        perimeter = max(1, 2 * ((max_x - min_x) + (max_y - min_y)))
+        
+        similarity = 1.0 / (1.0 + avg_distance / perimeter)
+        return similarity
+    except:
+        return 0
+
+def test_ellipse_similarity(contour):
+    """Testuje podobieństwo do elipsy"""
+    try:
+        if len(contour) < 5:
+            return 0
+        
+        # Znajdź środek i osie
+        x_coords = [p[0] for p in contour]
+        y_coords = [p[1] for p in contour]
+        
+        center_x = np.mean(x_coords)
+        center_y = np.mean(y_coords)
+        
+        # Promienie w kierunkach głównych
+        max_dist_x = max(abs(x - center_x) for x in x_coords)
+        max_dist_y = max(abs(y - center_y) for y in y_coords)
+        
+        if max_dist_x == 0 or max_dist_y == 0:
+            return 0
+        
+        # Sprawdź jak punkty pasują do elipsy
+        ellipse_errors = []
+        for x, y in contour:
+            # Równanie elipsy: (x-cx)²/a² + (y-cy)²/b² = 1
+            ellipse_eq = ((x - center_x) / max_dist_x)**2 + ((y - center_y) / max_dist_y)**2
+            error = abs(ellipse_eq - 1.0)
+            ellipse_errors.append(error)
+        
+        avg_error = np.mean(ellipse_errors)
+        similarity = 1.0 / (1.0 + avg_error)
+        
+        return similarity
+    except:
+        return 0
+
+def test_regular_polygon_similarity(contour):
+    """Testuje podobieństwo do wielokąta regularnego"""
+    try:
+        if len(contour) < 3:
+            return 0
+        
+        # Uproszczona analiza - sprawdź równość długości boków
+        side_lengths = []
+        for i in range(len(contour)):
+            p1 = contour[i]
+            p2 = contour[(i + 1) % len(contour)]
+            length = np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+            side_lengths.append(length)
+        
+        if not side_lengths:
+            return 0
+        
+        # Wariancja długości boków
+        length_variance = np.var(side_lengths)
+        avg_length = np.mean(side_lengths)
+        
+        if avg_length == 0:
+            return 0
+        
+        # Normalizowana wariancja
+        normalized_variance = length_variance / (avg_length**2)
+        
+        # Im mniejsza wariancja, tym bardziej regularny
+        regularity = 1.0 / (1.0 + normalized_variance)
+        
+        return regularity
+    except:
+        return 0
+
+def adaptive_contour_preservation(contour, analysis):
+    """Adaptacyjne zachowanie szczegółów konturu bazujące na AI analysis"""
+    try:
+        complexity = analysis['complexity']
+        strategy = analysis['optimization_strategy']
+        
+        if strategy == 'ai_maximum_preservation':
+            # Maksymalne zachowanie - praktycznie bez uproszczeń
+            preserved = preserve_maximum_detail(contour)
+        elif strategy == 'ai_high_preservation':
+            # Wysokie zachowanie - minimalne uproszczenia
+            preserved = preserve_high_detail(contour, complexity)
+        elif strategy == 'ai_balanced':
+            # Zbalansowane - inteligentne uproszczenia
+            preserved = preserve_balanced_detail(contour, analysis)
+        else:  # ai_optimized
+            # Optymalizowane - większe uproszczenia ale zachowanie kluczowych cech
+            preserved = preserve_optimized_detail(contour, analysis)
+        
+        return preserved
+    except:
+        return contour
+
+def preserve_maximum_detail(contour):
+    """Maksymalne zachowanie szczegółów - tylko usuwanie duplikatów"""
+    try:
+        if len(contour) <= 3:
+            return contour
+        
+        preserved = [contour[0]]
+        
+        for point in contour[1:]:
+            # Usuń tylko punkty praktycznie identyczne
+            last_point = preserved[-1]
+            distance = np.sqrt((point[0] - last_point[0])**2 + (point[1] - last_point[1])**2)
+            
+            if distance >= 0.5:  # Bardzo mały próg
+                preserved.append(point)
+        
+        return preserved if len(preserved) >= 3 else contour
+    except:
+        return contour
+
+def preserve_high_detail(contour, complexity):
+    """Wysokie zachowanie szczegółów z minimalnym upraszczaniem"""
+    try:
+        if len(contour) <= 5:
+            return contour
+        
+        # Adaptacyjny próg bazujący na złożoności
+        base_threshold = 1.0 + (1.0 - complexity) * 2.0
+        
+        preserved = [contour[0]]
+        
+        for i, point in enumerate(contour[1:], 1):
+            last_point = preserved[-1]
+            distance = np.sqrt((point[0] - last_point[0])**2 + (point[1] - last_point[1])**2)
+            
+            # Dynamiczny próg - zachowaj więcej punktów w obszarach o wysokiej krzywizne
+            if i > 1 and i < len(contour) - 1:
+                local_curvature = calculate_local_curvature(contour, i)
+                threshold = base_threshold * (1.0 - local_curvature * 0.5)
+            else:
+                threshold = base_threshold
+            
+            if distance >= threshold:
+                preserved.append(point)
+        
+        return preserved if len(preserved) >= 3 else contour
+    except:
+        return contour
+
+def calculate_local_curvature(contour, index):
+    """Oblicza lokalną krzywiznę w danym punkcie"""
+    try:
+        if index <= 0 or index >= len(contour) - 1:
+            return 0
+        
+        p1 = np.array(contour[index - 1])
+        p2 = np.array(contour[index])
+        p3 = np.array(contour[index + 1])
+        
+        v1 = p2 - p1
+        v2 = p3 - p2
+        
+        len1 = np.linalg.norm(v1)
+        len2 = np.linalg.norm(v2)
+        
+        if len1 > 0 and len2 > 0:
+            cos_angle = np.dot(v1, v2) / (len1 * len2)
+            cos_angle = np.clip(cos_angle, -1, 1)
+            angle = np.arccos(cos_angle)
+            
+            # Normalizuj do 0-1
+            curvature = angle / np.pi
+            return curvature
+        
+        return 0
+    except:
+        return 0
+
+def preserve_balanced_detail(contour, analysis):
+    """Zbalansowane zachowanie szczegółów z inteligentnym upraszczaniem"""
+    try:
+        if len(contour) <= 8:
+            return contour
+        
+        complexity = analysis['complexity']
+        smoothness = analysis['smoothness']
+        
+        # Adaptacyjne parametry
+        base_threshold = 2.0 + (1.0 - complexity) * 3.0
+        angle_threshold = np.pi / 6 + smoothness * np.pi / 6
+        
+        preserved = [contour[0]]
+        
+        i = 1
+        while i < len(contour):
+            current_point = contour[i]
+            last_point = preserved[-1]
+            
+            distance = np.sqrt((current_point[0] - last_point[0])**2 + (current_point[1] - last_point[1])**2)
+            
+            # Sprawdź czy punkt jest ważny geometrycznie
+            is_important = False
+            
+            if i > 0 and i < len(contour) - 1:
+                local_curvature = calculate_local_curvature(contour, i)
+                if local_curvature > 0.3:  # Znacząca krzywizna
+                    is_important = True
+            
+            # Zachowaj punkt jeśli jest ważny lub przekracza próg odległości
+            if is_important or distance >= base_threshold:
+                preserved.append(current_point)
+                i += 1
+            else:
+                # Sprawdź czy można bezpiecznie pominąć kilka punktów
+                skip_count = find_safe_skip_distance(contour, i, base_threshold, angle_threshold)
+                i += max(1, skip_count)
+        
+        return preserved if len(preserved) >= 3 else contour
+    except:
+        return contour
+
+def find_safe_skip_distance(contour, start_index, distance_threshold, angle_threshold):
+    """Znajduje bezpieczną odległość do pominięcia punktów"""
+    try:
+        if start_index >= len(contour) - 1:
+            return 1
+        
+        start_point = contour[start_index - 1] if start_index > 0 else contour[start_index]
+        
+        for skip in range(1, min(5, len(contour) - start_index)):
+            test_point = contour[start_index + skip - 1]
+            
+            # Sprawdź odległość
+            distance = np.sqrt((test_point[0] - start_point[0])**2 + (test_point[1] - start_point[1])**2)
+            
+            if distance >= distance_threshold:
+                return skip
+            
+            # Sprawdź zmianę kierunku
+            if start_index + skip < len(contour) - 1:
+                angle_change = calculate_angle_change(contour, start_index, start_index + skip)
+                if angle_change > angle_threshold:
+                    return skip
+        
+        return 1
+    except:
+        return 1
+
+def calculate_angle_change(contour, start_idx, end_idx):
+    """Oblicza zmianę kąta między punktami"""
+    try:
+        if start_idx <= 0 or end_idx >= len(contour) - 1:
+            return 0
+        
+        p1 = np.array(contour[start_idx - 1])
+        p2 = np.array(contour[start_idx])
+        p3 = np.array(contour[end_idx])
+        p4 = np.array(contour[end_idx + 1])
+        
+        v1 = p2 - p1
+        v2 = p4 - p3
+        
+        len1 = np.linalg.norm(v1)
+        len2 = np.linalg.norm(v2)
+        
+        if len1 > 0 and len2 > 0:
+            cos_angle = np.dot(v1, v2) / (len1 * len2)
+            cos_angle = np.clip(cos_angle, -1, 1)
+            angle_change = np.arccos(cos_angle)
+            return angle_change
+        
+        return 0
+    except:
+        return 0
+
+def preserve_optimized_detail(contour, analysis):
+    """Optymalizowane zachowanie szczegółów z większymi uproszczeniami"""
+    try:
+        if len(contour) <= 10:
+            return contour
+        
+        complexity = analysis['complexity']
+        geometric_regularity = analysis['geometric_regularity']
+        
+        # Więcej uproszczeń dla regularnych kształtów
+        base_threshold = 3.0 + geometric_regularity * 2.0 + (1.0 - complexity) * 4.0
+        
+        preserved = [contour[0]]
+        
+        i = 1
+        while i < len(contour):
+            current_point = contour[i]
+            last_point = preserved[-1]
+            
+            distance = np.sqrt((current_point[0] - last_point[0])**2 + (current_point[1] - last_point[1])**2)
+            
+            # Zachowaj tylko kluczowe punkty
+            if distance >= base_threshold:
+                preserved.append(current_point)
+            
+            i += 1
+        
+        # Post-processing - usuń zbędne punkty na prostych liniach
+        final_preserved = remove_collinear_points(preserved)
+        
+        return final_preserved if len(final_preserved) >= 3 else preserved
+    except:
+        return contour
+
+def remove_collinear_points(contour, tolerance=2.0):
+    """Usuwa punkty leżące na prostych liniach"""
+    try:
+        if len(contour) <= 3:
+            return contour
+        
+        preserved = [contour[0]]
+        
+        for i in range(1, len(contour) - 1):
+            p1 = np.array(preserved[-1])
+            p2 = np.array(contour[i])
+            p3 = np.array(contour[i + 1])
+            
+            # Sprawdź czy punkt leży na linii między p1 i p3
+            line_distance = point_to_line_distance(p2, p1, p3)
+            
+            if line_distance > tolerance:
+                preserved.append(contour[i])
+        
+        # Zawsze dodaj ostatni punkt
+        preserved.append(contour[-1])
+        
+        return preserved
+    except:
+        return contour
+
+def point_to_line_distance(point, line_start, line_end):
+    """Oblicza odległość punktu od linii"""
+    try:
+        line_vec = line_end - line_start
+        line_len = np.linalg.norm(line_vec)
+        
+        if line_len == 0:
+            return np.linalg.norm(point - line_start)
+        
+        line_unit = line_vec / line_len
+        point_vec = point - line_start
+        
+        # Projekcja punktu na linię
+        projection_length = np.dot(point_vec, line_unit)
+        projection_length = max(0, min(line_len, projection_length))
+        
+        projection_point = line_start + projection_length * line_unit
+        distance = np.linalg.norm(point - projection_point)
+        
+        return distance
+    except:
+        return 0
+
+def create_ai_maximum_fidelity_path(contour, analysis):
+    """Tworzy ścieżkę maksymalnej wierności z AI enhancement"""
+    try:
+        if len(contour) < 3:
+            return create_simple_svg_path(contour)
+        
+        path_data = f"M {contour[0][0]:.4f} {contour[0][1]:.4f}"
+        
+        # Używaj krzywych Beziera dla gładkich obszarów
+        i = 1
+        while i < len(contour):
+            current = contour[i]
+            
+            # Sprawdź czy użyć krzywej
+            if (i + 2 < len(contour) and 
+                should_use_curve_ai_enhanced(contour, i, analysis)):
+                
+                next_point = contour[i + 1]
+                
+                # Zaawansowane punkty kontrolne bazujące na lokalnej geometrii
+                cp1, cp2 = calculate_ai_control_points(contour, i, analysis)
+                
+                path_data += f" C {cp1[0]:.4f} {cp1[1]:.4f} {cp2[0]:.4f} {cp2[1]:.4f} {next_point[0]:.4f} {next_point[1]:.4f}"
+                i += 2
+            else:
+                path_data += f" L {current[0]:.4f} {current[1]:.4f}"
+                i += 1
+        
+        path_data += " Z"
+        return path_data
+    except:
+        return create_simple_svg_path(contour)
+
+def should_use_curve_ai_enhanced(contour, index, analysis):
+    """AI-enhanced decyzja o użyciu krzywej"""
+    try:
+        if index < 1 or index >= len(contour) - 2:
+            return False
+        
+        smoothness = analysis.get('smoothness', 0.5)
+        complexity = analysis.get('complexity', 0.5)
+        
+        # Analiza lokalnej geometrii
+        local_curvature = calculate_local_curvature(contour, index)
+        local_smoothness = calculate_local_smoothness(contour, index)
+        
+        # AI decision criteria
+        use_curve = (
+            local_curvature > 0.1 and  # Znacząca krzywizna
+            local_smoothness > 0.6 and  # Gładki obszar
+            smoothness > 0.4 and  # Ogólna gładkość konturu
+            complexity > 0.3  # Wystarczająca złożoność
+        )
+        
+        return use_curve
+    except:
+        return False
+
+def calculate_local_smoothness(contour, index, window=2):
+    """Oblicza lokalną gładkość w oknie wokół punktu"""
+    try:
+        start_idx = max(0, index - window)
+        end_idx = min(len(contour), index + window + 1)
+        
+        local_contour = contour[start_idx:end_idx]
+        
+        if len(local_contour) < 3:
+            return 0.5
+        
+        direction_changes = []
+        
+        for i in range(1, len(local_contour) - 1):
+            p1 = np.array(local_contour[i-1])
+            p2 = np.array(local_contour[i])
+            p3 = np.array(local_contour[i+1])
+            
+            v1 = p2 - p1
+            v2 = p3 - p2
+            
+            len1 = np.linalg.norm(v1)
+            len2 = np.linalg.norm(v2)
+            
+            if len1 > 0 and len2 > 0:
+                direction_change = np.linalg.norm(v2/len2 - v1/len1)
+                direction_changes.append(direction_change)
+        
+        if direction_changes:
+            avg_change = np.mean(direction_changes)
+            smoothness = 1.0 / (1.0 + avg_change)
+            return min(1.0, smoothness)
+        
+        return 0.5
+    except:
+        return 0.5
+
+def calculate_ai_control_points(contour, index, analysis):
+    """Oblicza inteligentne punkty kontrolne dla krzywych Beziera"""
+    try:
+        if index < 1 or index >= len(contour) - 2:
+            # Fallback dla prostych punktów kontrolnych
+            current = contour[index]
+            next_point = contour[index + 1]
+            return (current, next_point)
+        
+        p0 = np.array(contour[index - 1])
+        p1 = np.array(contour[index])
+        p2 = np.array(contour[index + 1])
+        p3 = np.array(contour[index + 2])
+        
+        # Catmull-Rom spline inspired control points
+        tension = 0.5 - analysis.get('smoothness', 0.5) * 0.3
+        
+        # Tangent vectors
+        t1 = (p2 - p0) * tension
+        t2 = (p3 - p1) * tension
+        
+        # Control points
+        cp1 = p1 + t1 / 3
+        cp2 = p2 - t2 / 3
+        
+        return (tuple(cp1.astype(float)), tuple(cp2.astype(float)))
+    except:
+        # Simple fallback
+        current = contour[index]
+        next_point = contour[index + 1]
+        return (current, next_point)
+
+def create_ai_high_fidelity_path(contour, analysis):
+    """Tworzy ścieżkę wysokiej wierności z AI enhancement"""
+    try:
+        path_data = f"M {contour[0][0]:.3f} {contour[0][1]:.3f}"
+        
+        i = 1
+        while i < len(contour):
+            current = contour[i]
+            
+            # Używaj krzywych dla gładkich obszarów
+            if (i % 3 == 0 and i + 1 < len(contour) and 
+                should_use_curve_ai_enhanced(contour, i, analysis)):
+                
+                next_point = contour[min(i + 1, len(contour) - 1)]
+                prev_point = contour[i - 1] if i > 0 else contour[i]
+                
+                # Prostsze punkty kontrolne
+                cp_x = current[0] + (next_point[0] - prev_point[0]) * 0.2
+                cp_y = current[1] + (next_point[1] - prev_point[1]) * 0.2
+                
+                path_data += f" Q {cp_x:.3f} {cp_y:.3f} {current[0]:.3f} {current[1]:.3f}"
+            else:
+                path_data += f" L {current[0]:.3f} {current[1]:.3f}"
+            
+            i += 1
+        
+        path_data += " Z"
+        return path_data
+    except:
+        return create_simple_svg_path(contour)
+
+def create_ai_balanced_path(contour, analysis):
+    """Tworzy zbalansowaną ścieżkę AI"""
+    try:
+        path_data = f"M {contour[0][0]:.2f} {contour[0][1]:.2f}"
+        
+        for i in range(1, len(contour)):
+            current = contour[i]
+            
+            # Okazjonalne krzywe dla kluczowych punktów
+            if (i % 4 == 0 and i > 0 and i < len(contour) - 1 and
+                analysis.get('smoothness', 0) > 0.5):
+                
+                prev_point = contour[i - 1]
+                next_point = contour[min(i + 1, len(contour) - 1)]
+                
+                cp_x = current[0] + (next_point[0] - prev_point[0]) * 0.15
+                cp_y = current[1] + (next_point[1] - prev_point[1]) * 0.15
+                
+                path_data += f" Q {cp_x:.2f} {cp_y:.2f} {current[0]:.2f} {current[1]:.2f}"
+            else:
+                path_data += f" L {current[0]:.2f} {current[1]:.2f}"
+        
+        path_data += " Z"
+        return path_data
+    except:
+        return create_simple_svg_path(contour)
+
+def create_ai_optimized_path(contour, analysis):
+    """Tworzy optymalizowaną ścieżkę AI"""
+    try:
+        path_data = f"M {contour[0][0]:.2f} {contour[0][1]:.2f}"
+        
+        for point in contour[1:]:
+            path_data += f" L {point[0]:.2f} {point[1]:.2f}"
+        
+        path_data += " Z"
+        return path_data
+    except:
         return create_simple_svg_path(contour)
 
 def analyze_contour_detail_level(contour):
