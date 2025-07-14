@@ -24,8 +24,8 @@ app = Flask(__name__)
 
 # Konfiguracja
 UPLOAD_FOLDER = 'uploads'
-MAX_FILE_SIZE = 8 * 1024 * 1024  # 8MB
-MAX_IMAGE_SIZE = 1200  # Znacznie zwiększono dla maksymalnej jakości detali
+MAX_FILE_SIZE = 12 * 1024 * 1024  # 12MB - zwiększono dla lepszej jakości
+MAX_IMAGE_SIZE = 1800  # Ultra wysoka rozdzielczość dla maksymalnej jakości
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'svg'}
 
 # Upewnij się, że katalogi istnieją
@@ -36,42 +36,147 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def optimize_image_for_vectorization(image_path, max_size=MAX_IMAGE_SIZE):
-    """Ultra zaawansowana optymalizacja obrazu z zachowaniem szczegółów oryginalnego"""
+    """Ultra zaawansowana optymalizacja obrazu z zachowaniem szczegółów oryginalnego - PREMIUM VERSION"""
     try:
         with Image.open(image_path) as img:
-            # Konwersja do RGB z zachowaniem jakości
+            # Konwersja do RGB z zachowaniem maksymalnej jakości
             if img.mode != 'RGB':
-                img = img.convert('RGB')
+                if img.mode == 'RGBA':
+                    # Zachowaj przezroczystość przez kompozycję z białym tłem
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                    img = background
+                else:
+                    img = img.convert('RGB')
 
-            # OPTYMALIZACJA: Kontrolowana rozdzielczość dla lepszej jakości
+            # PREMIUM OPTYMALIZACJA: Inteligentne skalowanie bazujące na zawartości
             original_width, original_height = img.size
-            if max(original_width, original_height) < 400:
-                # Małe obrazy - zwiększ 2x dla zachowania detali
-                target_size = min(max_size * 2, 1200)
-            elif max(original_width, original_height) < 800:
-                # Średnie obrazy - zwiększ 1.5x
-                target_size = min(max_size * 1.5, 900)
+            aspect_ratio = original_width / original_height
+            
+            # Analiza gęstości szczegółów dla inteligentnego skalowania
+            detail_density = analyze_image_detail_density(img)
+            
+            if detail_density > 0.7:  # Bardzo dużo szczegółów
+                target_size = min(max_size * 1.5, 2000)
+            elif detail_density > 0.5:  # Dużo szczegółów
+                target_size = min(max_size * 1.2, 1600)
+            elif max(original_width, original_height) < 600:
+                # Małe obrazy - agresywne zwiększanie dla zachowania detali
+                target_size = min(max_size * 2.5, 2200)
+            elif max(original_width, original_height) < 1000:
+                # Średnie obrazy - umiarkowane zwiększanie
+                target_size = min(max_size * 1.8, 1800)
             else:
-                # Większe obrazy - zachowuj oryginalny rozmiar z kontrolą
+                # Większe obrazy - kontrolowane skalowanie
                 target_size = max_size
 
-            # Wysokiej jakości skalowanie z zachowaniem ostrości
-            if max(original_width, original_height) > target_size:
-                img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
-            elif max(original_width, original_height) < target_size * 0.8:
-                # Zwiększ małe obrazy dla lepszej jakości detali
-                scale_factor = target_size / max(original_width, original_height)
-                new_width = int(original_width * scale_factor)
-                new_height = int(original_height * scale_factor)
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            # Ultra wysokiej jakości skalowanie z multi-pass sharpening
+            current_size = max(original_width, original_height)
+            if current_size != target_size:
+                if aspect_ratio > 1:  # Landscape
+                    new_width = target_size
+                    new_height = int(target_size / aspect_ratio)
+                else:  # Portrait
+                    new_height = target_size
+                    new_width = int(target_size * aspect_ratio)
+                
+                # Multi-step resizing dla lepszej jakości
+                img = multi_step_resize(img, (new_width, new_height))
 
-            # Multi-pass enhancement dla cartoon-style images z zachowaniem detali
-            img = enhance_cartoon_precision_ultra(img)
+            # Premium multi-pass enhancement
+            img = enhance_cartoon_precision_premium(img)
 
             return img
     except Exception as e:
         print(f"Błąd podczas optymalizacji obrazu: {e}")
         return None
+
+def analyze_image_detail_density(img):
+    """Analizuje gęstość szczegółów w obrazie"""
+    try:
+        # Konwertuj do skali szarości dla analizy
+        gray = img.convert('L')
+        img_array = np.array(gray)
+        
+        # Oblicz gradient dla wykrywania krawędzi
+        from scipy import ndimage
+        gradient_x = ndimage.sobel(img_array, axis=1)
+        gradient_y = ndimage.sobel(img_array, axis=0)
+        gradient_magnitude = np.sqrt(gradient_x**2 + gradient_y**2)
+        
+        # Normalizuj i oblicz gęstość
+        detail_density = np.mean(gradient_magnitude) / 255.0
+        return min(1.0, detail_density * 3)
+    except:
+        return 0.5
+
+def multi_step_resize(img, target_size):
+    """Multi-step resizing dla lepszej jakości"""
+    try:
+        current_width, current_height = img.size
+        target_width, target_height = target_size
+        
+        # Jeśli różnica jest duża, rób to w krokach
+        width_ratio = target_width / current_width
+        height_ratio = target_height / current_height
+        max_ratio = max(width_ratio, height_ratio)
+        
+        if max_ratio > 2.0 or max_ratio < 0.5:
+            # Duża zmiana - rób w krokach
+            steps = int(abs(np.log2(max_ratio))) + 1
+            
+            for step in range(steps):
+                progress = (step + 1) / steps
+                intermediate_width = int(current_width + (target_width - current_width) * progress)
+                intermediate_height = int(current_height + (target_height - current_height) * progress)
+                
+                if step == steps - 1:
+                    # Ostatni krok - użyj dokładnego rozmiaru
+                    intermediate_width, intermediate_height = target_width, target_height
+                
+                img = img.resize((intermediate_width, intermediate_height), Image.Resampling.LANCZOS)
+                
+                # Wyostrz po każdym kroku
+                if step < steps - 1:
+                    img = img.filter(ImageFilter.UnsharpMask(radius=0.5, percent=100, threshold=1))
+        else:
+            # Mała zmiana - bezpośrednie skalowanie
+            img = img.resize(target_size, Image.Resampling.LANCZOS)
+        
+        return img
+    except:
+        return img.resize(target_size, Image.Resampling.LANCZOS)
+
+def enhance_cartoon_precision_premium(img):
+    """Premium enhancement dla maksymalnej jakości cartoon-style obrazów"""
+    try:
+        # Multi-pass contrast enhancement
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.15)
+        
+        # Advanced multi-kernel sharpening
+        img = img.filter(ImageFilter.UnsharpMask(radius=0.2, percent=150, threshold=1))
+        img = img.filter(ImageFilter.UnsharpMask(radius=0.5, percent=100, threshold=2))
+        img = img.filter(ImageFilter.UnsharpMask(radius=1.0, percent=60, threshold=3))
+        
+        # Intelligent noise reduction
+        img = img.filter(ImageFilter.MedianFilter(size=3))
+        
+        # Color enhancement dla lepszego wykrywania
+        enhancer = ImageEnhance.Color(img)
+        img = enhancer.enhance(1.15)
+        
+        # Final precision sharpening
+        enhancer = ImageEnhance.Sharpness(img)
+        img = enhancer.enhance(1.3)
+        
+        # Edge enhancement
+        img = img.filter(ImageFilter.EDGE_ENHANCE)
+        
+        return img
+    except Exception as e:
+        print(f"Błąd w enhance_cartoon_precision_premium: {e}")
+        return img
 
 def enhance_cartoon_precision_ultra(img):
     """Ultra precyzja dla obrazów cartoon-style z zachowaniem najmniejszych detali"""
@@ -1618,71 +1723,81 @@ def analyze_image_complexity(image):
 
         print(f"🎯 Wynik złożoności: {complexity_score:.3f} (0.0-1.0)")
 
-        # DYNAMICZNE PARAMETRY BAZUJĄCE NA AI SCORING
+        # PREMIUM DYNAMICZNE PARAMETRY - MAKSYMALNA JAKOŚĆ
         if complexity_score > 0.8:  # ULTRA-COMPLEX
             return {
-                'max_colors': 60,  # Maksymalna liczba kolorów
-                'tolerance_factor': 0.2,  # Najwyższa precyzja
-                'detail_preservation': 'ai_maximum',
+                'max_colors': 80,  # Znacznie zwiększona liczba kolorów
+                'tolerance_factor': 0.15,  # Ultra wysoka precyzja
+                'detail_preservation': 'ai_supreme',
                 'min_region_size': 1,
                 'color_flattening': False,
-                'quality_enhancement': 'ai_maximum',
-                'curve_smoothing': 'adaptive_ultra',
+                'quality_enhancement': 'ai_supreme',
+                'curve_smoothing': 'adaptive_supreme',
                 'edge_enhancement': True,
                 'micro_detail_preservation': True,
-                'gradient_preservation': True
+                'gradient_preservation': True,
+                'ultra_precision_mode': True,
+                'advanced_color_analysis': True
             }
         elif complexity_score > 0.65:  # VERY COMPLEX
             return {
-                'max_colors': 50,
-                'tolerance_factor': 0.25,
+                'max_colors': 70,  # Zwiększono
+                'tolerance_factor': 0.18,  # Zwiększona precyzja
+                'detail_preservation': 'ai_supreme',
+                'min_region_size': 1,
+                'color_flattening': False,
+                'quality_enhancement': 'ai_supreme',
+                'curve_smoothing': 'adaptive_supreme',
+                'edge_enhancement': True,
+                'micro_detail_preservation': True,
+                'gradient_preservation': True,
+                'ultra_precision_mode': True,
+                'advanced_color_analysis': True
+            }
+        elif complexity_score > 0.5:  # COMPLEX
+            return {
+                'max_colors': 65,  # Zwiększono
+                'tolerance_factor': 0.22,  # Zwiększona precyzja
                 'detail_preservation': 'ai_ultra_high',
                 'min_region_size': 1,
                 'color_flattening': False,
                 'quality_enhancement': 'ai_ultra_high',
-                'curve_smoothing': 'adaptive_high',
+                'curve_smoothing': 'adaptive_ultra',
                 'edge_enhancement': True,
                 'micro_detail_preservation': True,
-                'gradient_preservation': True
+                'gradient_preservation': True,
+                'ultra_precision_mode': True,
+                'advanced_color_analysis': True
             }
-        elif complexity_score > 0.5:  # COMPLEX
+        elif complexity_score > 0.35:  # MEDIUM
             return {
-                'max_colors': 45,
-                'tolerance_factor': 0.3,
+                'max_colors': 60,  # Zwiększono
+                'tolerance_factor': 0.25,  # Zwiększona precyzja
                 'detail_preservation': 'ai_high',
                 'min_region_size': 1,
                 'color_flattening': False,
                 'quality_enhancement': 'ai_high',
-                'curve_smoothing': 'adaptive',
+                'curve_smoothing': 'adaptive_high',
                 'edge_enhancement': True,
-                'micro_detail_preservation': False,
-                'gradient_preservation': True
-            }
-        elif complexity_score > 0.35:  # MEDIUM
-            return {
-                'max_colors': 40,
-                'tolerance_factor': 0.35,
-                'detail_preservation': 'ai_medium',
-                'min_region_size': 2,
-                'color_flattening': False,
-                'quality_enhancement': 'ai_medium',
-                'curve_smoothing': 'balanced',
-                'edge_enhancement': True,
-                'micro_detail_preservation': False,
-                'gradient_preservation': False
+                'micro_detail_preservation': True,
+                'gradient_preservation': True,
+                'ultra_precision_mode': False,
+                'advanced_color_analysis': True
             }
         else:  # SIMPLE
             return {
-                'max_colors': 35,
-                'tolerance_factor': 0.4,
-                'detail_preservation': 'ai_standard',
-                'min_region_size': 3,
+                'max_colors': 55,  # Zwiększono
+                'tolerance_factor': 0.28,  # Zwiększona precyzja
+                'detail_preservation': 'ai_medium',
+                'min_region_size': 1,
                 'color_flattening': False,
-                'quality_enhancement': 'ai_standard',
-                'curve_smoothing': 'standard',
-                'edge_enhancement': False,
+                'quality_enhancement': 'ai_medium',
+                'curve_smoothing': 'adaptive',
+                'edge_enhancement': True,
                 'micro_detail_preservation': False,
-                'gradient_preservation': False
+                'gradient_preservation': True,
+                'ultra_precision_mode': False,
+                'advanced_color_analysis': True
             }
 
     except Exception as e:
@@ -3543,20 +3658,22 @@ def index():
     </div>
 
     <div class="info">
-        <strong>🚀 Nowe funkcje:</strong>
-        <br>• Zaawansowana wektoryzacja z krzywymi Beziera
-        <br>• Inteligentne wykrywanie i segmentacja kolorów
-        <br>• Kompatybilność z InkStitch i parametrami haftu
-        <br>• Realistyczne podglądy z efektami haftu
-        <br>• Adaptacyjne parametry w zależności od koloru
+        <strong>🚀 PREMIUM funkcje najwyższej jakości:</strong>
+        <br>• Ultra precyzyjna wektoryzacja z AI enhancement
+        <br>• Do 80 kolorów z advanced color analysis
+        <br>• Multi-step image processing dla maksymalnej jakości
+        <br>• Supreme curve smoothing algorithms
+        <br>• Ultra precision mode dla detali
+        <br>• Advanced micro-detail preservation
     </div>
 
     <div class="warning">
-        ⚠️ Parametry optymalizacji:
-        <br>• Maksymalny rozmiar pliku: 8MB
-        <br>• Obrazy skalowane do 600px dla jakości
-        <br>• 8 dominujących kolorów maksymalnie
-        <br>• Wygładzone ścieżki SVG z krzywymi
+        ⚠️ Parametry PREMIUM optymalizacji:
+        <br>• Maksymalny rozmiar pliku: 12MB (zwiększono)
+        <br>• Ultra wysoka rozdzielczość do 1800px
+        <br>• Do 80 kolorów wysokiej precyzji
+        <br>• AI-enhanced curve smoothing
+        <br>• Multi-step image enhancement
     </div>
 
     <div class="upload-area" onclick="document.getElementById('file').click()">
