@@ -1929,9 +1929,6 @@ def analyze_texture_directionality(img_array):
     except Exception as e:
         print(f"Błąd w analyze_texture_directionality: {e}")
         return 0.3
-        directions = []
-        for angle in [0, 45, 90, 135]:
-            # Sobel w różnych kierunkach
             if angle == 0:
                 grad = ndimage.sobel(gray, axis=1)
             elif angle == 45:
