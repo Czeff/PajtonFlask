@@ -1928,11 +1928,6 @@ def analyze_texture_directionality(img_array):
         return min(1.0, (directionality - 1) / 3)
     except:
         return 0.3
-
-def analyze_texture_directionality(img_array):
-    """Analizuje kierunkowość tekstur"""
-    try:
-        from scipy import ndimage
         gray = np.mean(img_array, axis=2)
 
         # Gradienty w różnych kierunkach
