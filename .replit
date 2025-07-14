@@ -9,11 +9,20 @@ packages = ["freetype", "glibcLocales", "gobject-introspection", "gtk3", "lcms2"
 run = ["sh", "-c", "python app.py"]
 
 [workflows]
-runButton = "Run"
+runButton = "Run Ultra Quality"
 
 [[workflows.workflow]]
 name = "Run"
 author = 44847630
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python app.py"
+
+[[workflows.workflow]]
+name = "Run Ultra Quality"
+author = 45007888
 mode = "sequential"
 
 [[workflows.workflow.tasks]]

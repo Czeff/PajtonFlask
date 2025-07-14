@@ -550,48 +550,68 @@ def calculate_overall_complexity_score(edge_density, edge_sharpness, edge_connec
         return 0.5
 
 def extract_dominant_colors_advanced(image, max_colors=50, params=None):
-    """Zoptymalizowana analiza kolorów skupiająca się na głównych obszarach"""
+    """ULTRA PREMIUM analiza kolorów z AI enhancement"""
     try:
         img_array = np.array(image)
 
         # Pobierz parametry
-        tolerance_factor = params.get('tolerance_factor', 0.5) if params else 0.5
-        focus_main_areas = params.get('focus_main_areas', True) if params else True
-        color_flattening = params.get('color_flattening', True) if params else True
+        tolerance_factor = params.get('tolerance_factor', 0.3) if params else 0.3
+        cartoon_optimization = params.get('cartoon_optimization', False) if params else False
+        line_art_optimization = params.get('line_art_optimization', False) if params else False
+        ultra_precision_mode = params.get('ultra_precision_mode', False) if params else False
 
-        print(f"🎨 Optimized Color Analysis: tolerancja={tolerance_factor}, main_areas={focus_main_areas}")
+        print(f"🎨 ULTRA PREMIUM Color Analysis:")
+        print(f"   🔧 Tolerancja: {tolerance_factor}, Cartoon: {cartoon_optimization}, LineArt: {line_art_optimization}")
 
         colors = []
 
-        # 1. GŁÓWNE KOLORY DOMINUJĄCE - skupienie na dużych obszarach
-        if focus_main_areas:
-            # Używaj większe próbkowanie dla głównych kolorów
-            main_colors = extract_main_area_colors(img_array, max_colors // 2, params)
-            colors.extend(main_colors)
-            print(f"   🏢 Main areas: {len(main_colors)} kolorów")
+        # 1. AI-ENHANCED PERCEPTUAL COLOR EXTRACTION
+        if ultra_precision_mode:
+            perceptual_colors = extract_perceptual_important_colors_ultra(img_array, max_colors // 3, params)
+            colors.extend(perceptual_colors)
+            print(f"   🧠 AI Perceptual: {len(perceptual_colors)} kolorów")
 
-        # 2. KOLORY KRAWĘDZI - ale tylko główne
-        edge_colors = extract_simplified_edge_colors(img_array, max_colors // 4, params)
-        colors.extend(edge_colors)
-        print(f"   📐 Main edges: {len(edge_colors)} kolorów")
+        # 2. CARTOON/ANIME OPTIMIZED COLORS
+        if cartoon_optimization:
+            cartoon_colors = extract_cartoon_optimized_colors(img_array, max_colors // 4, params)
+            colors.extend(cartoon_colors)
+            print(f"   🎭 Cartoon: {len(cartoon_colors)} kolorów")
 
-        # 3. KOLORY UZUPEŁNIAJĄCE
-        if len(colors) < max_colors:
-            additional_colors = extract_adaptive_clustering_colors(img_array, max_colors - len(colors), params)
-            colors.extend(additional_colors)
-            print(f"   ➕ Additional: {len(additional_colors)} kolorów")
+        # 3. LINE ART OPTIMIZED COLORS
+        if line_art_optimization:
+            line_art_colors = extract_line_art_colors(img_array, max_colors // 4, params)
+            colors.extend(line_art_colors)
+            print(f"   ✏️ Line Art: {len(line_art_colors)} kolorów")
 
-        # AGRESYWNE ŁĄCZENIE PODOBNYCH KOLORÓW
-        final_colors = aggressive_color_merging(colors, max_colors, img_array, tolerance_factor)
+        # 4. MULTI-SCALE DOMINANT COLORS with AI clustering
+        multi_scale_colors = extract_multi_scale_dominant_colors(img_array, max_colors // 3, params)
+        colors.extend(multi_scale_colors)
+        print(f"   🔍 Multi-scale: {len(multi_scale_colors)} kolorów")
 
-        # SORTOWANIE WEDŁUG WIELKOŚCI OBSZARÓW
-        final_colors = sort_colors_by_area_size(img_array, final_colors)
+        # 5. EDGE-AWARE COLOR EXTRACTION
+        edge_aware_colors = extract_edge_aware_colors(img_array, max_colors // 4, params)
+        colors.extend(edge_aware_colors)
+        print(f"   📐 Edge-aware: {len(edge_aware_colors)} kolorów")
 
-        print(f"🎨 Optimized Color Analysis Complete: {len(final_colors)} głównych kolorów")
+        # 6. GRADIENT & TRANSITION COLORS
+        if params.get('gradient_preservation', False):
+            gradient_colors = extract_gradient_transition_colors(img_array, max_colors // 6, params)
+            colors.extend(gradient_colors)
+            print(f"   🌈 Gradient: {len(gradient_colors)} kolorów")
+
+        # AI-POWERED COLOR REFINEMENT & MERGING
+        final_colors = ai_powered_color_refinement_ultra(colors, max_colors, img_array, params)
+
+        # PERCEPTUAL IMPORTANCE SORTING
+        final_colors = sort_colors_by_perceptual_importance(img_array, final_colors, params)
+
+        print(f"🎨 ULTRA PREMIUM Color Analysis Complete: {len(final_colors)} najwyższej jakości kolorów")
         return final_colors
 
     except Exception as e:
-        print(f"❌ Błąd color analysis: {e}")
+        print(f"❌ Błąd ULTRA color analysis: {e}")
+        import traceback
+        traceback.print_exc()
         return extract_dominant_colors_simple(image, max_colors)
 
 def extract_dominant_colors_simple(image, max_colors=8):
@@ -1659,147 +1679,69 @@ def create_smooth_curve_path(contour):
         return create_simple_svg_path(contour)
 
 def analyze_image_complexity(image):
-    """Zaawansowana analiza złożoności obrazu z algorytmami AI do maksymalnej jakości"""
+    """ULTRA PREMIUM analiza złożoności obrazu z najnowszymi algorytmami AI"""
     try:
         img_array = np.array(image)
         height, width = img_array.shape[:2]
 
-        # 1. ZAAWANSOWANA ANALIZA KRAWĘDZI
+        # 1. ZAAWANSOWANA ANALIZA KRAWĘDZI Z DEEP LEARNING INSIGHTS
         edge_density = detect_edge_density_advanced(img_array)
         edge_sharpness = detect_edge_sharpness(img_array)
         edge_connectivity = detect_edge_connectivity(img_array)
+        edge_continuity = analyze_edge_continuity(img_array)
 
-        # 2. ULTRA PRECYZYJNA ANALIZA KOLORÓW
+        # 2. ULTRA PRECYZYJNA ANALIZA KOLORÓW Z PERCEPTUAL SCIENCE
         color_complexity = detect_color_complexity_advanced(img_array)
         color_variance = detect_color_variance(img_array)
         color_gradients = detect_color_gradients(img_array)
+        color_harmony = analyze_color_harmony(img_array)
 
-        # 3. ANALIZA TEKSTUR I WZORÓW
+        # 3. ANALIZA TEKSTUR I WZORÓW Z MACHINE LEARNING
         texture_complexity = detect_texture_complexity(img_array)
         pattern_regularity = detect_pattern_regularity(img_array)
+        texture_directionality = analyze_texture_directionality(img_array)
 
-        # 4. ANALIZA GEOMETRYCZNA
+        # 4. ZAAWANSOWANA ANALIZA GEOMETRYCZNA
         geometric_complexity = detect_geometric_shapes(img_array)
         curve_complexity = detect_curve_complexity(img_array)
+        shape_regularity = analyze_shape_regularity(img_array)
 
-        # 5. PERCEPTUALNA ANALIZA JAKOŚCI
+        # 5. PERCEPTUALNA ANALIZA JAKOŚCI + VISUAL SALIENCY
         perceptual_importance = calculate_perceptual_importance(img_array)
         detail_density = calculate_detail_density(img_array)
+        visual_saliency = calculate_visual_saliency(img_array)
 
-        print(f"🔬 Zaawansowana analiza:")
-        print(f"   📐 Krawędzie: gęstość={edge_density:.3f}, ostrość={edge_sharpness:.3f}, łączność={edge_connectivity:.3f}")
-        print(f"   🎨 Kolory: złożoność={color_complexity}, wariancja={color_variance:.3f}, gradienty={color_gradients:.3f}")
-        print(f"   🖼️ Tekstury: złożoność={texture_complexity:.3f}, regularność={pattern_regularity:.3f}")
-        print(f"   📊 Geometria: kształty={geometric_complexity:.3f}, krzywe={curve_complexity:.3f}")
-        print(f"   👁️ Percepcja: ważność={perceptual_importance:.3f}, szczegóły={detail_density:.3f}")
+        # 6. NOWE: ANALIZA CARTOON/ANIME STYLE
+        cartoon_score = detect_cartoon_style_features(img_array)
+        line_art_score = detect_line_art_quality(img_array)
 
-        # ALGORYTM ADAPTACYJNEGO DOBORU PARAMETRÓW
-        complexity_score = calculate_overall_complexity_score(
-            edge_density, edge_sharpness, edge_connectivity,
-            color_complexity, color_variance, color_gradients,
-            texture_complexity, pattern_regularity,
-            geometric_complexity, curve_complexity,
-            perceptual_importance, detail_density
+        print(f"🔬 ULTRA PREMIUM Analiza AI:")
+        print(f"   📐 Krawędzie: gęstość={edge_density:.3f}, ostrość={edge_sharpness:.3f}, ciągłość={edge_continuity:.3f}")
+        print(f"   🎨 Kolory: złożoność={color_complexity}, harmonia={color_harmony:.3f}, gradienty={color_gradients:.3f}")
+        print(f"   🖼️ Tekstury: złożoność={texture_complexity:.3f}, kierunkowość={texture_directionality:.3f}")
+        print(f"   📊 Geometria: kształty={geometric_complexity:.3f}, regularność={shape_regularity:.3f}")
+        print(f"   👁️ Percepcja: ważność={perceptual_importance:.3f}, saliency={visual_saliency:.3f}")
+        print(f"   🎭 Styl: cartoon={cartoon_score:.3f}, line_art={line_art_score:.3f}")
+
+        # ZAAWANSOWANY ALGORYTM AI DO DOBORU PARAMETRÓW
+        complexity_score = calculate_advanced_complexity_score(
+            edge_density, edge_sharpness, edge_connectivity, edge_continuity,
+            color_complexity, color_variance, color_gradients, color_harmony,
+            texture_complexity, pattern_regularity, texture_directionality,
+            geometric_complexity, curve_complexity, shape_regularity,
+            perceptual_importance, detail_density, visual_saliency,
+            cartoon_score, line_art_score
         )
 
-        print(f"🎯 Wynik złożoności: {complexity_score:.3f} (0.0-1.0)")
+        print(f"🎯 AI Complexity Score: {complexity_score:.3f} (0.0-1.0)")
 
-        # OPTIMIZED PARAMETERS - Focus on larger regions
-        if complexity_score > 0.8:  # ULTRA-COMPLEX
-            return {
-                'max_colors': 25,  # Zmniejszono dla większych regionów
-                'tolerance_factor': 0.4,  # Zwiększono tolerancję dla łączenia podobnych kolorów
-                'detail_preservation': 'balanced',
-                'min_region_size': 500,  # Znacznie zwiększono minimalny rozmiar regionu
-                'color_flattening': True,
-                'quality_enhancement': 'ai_high',
-                'curve_smoothing': 'adaptive',
-                'edge_enhancement': True,
-                'micro_detail_preservation': False,  # Wyłączono mikro-detale
-                'gradient_preservation': False,  # Wyłączono zachowanie gradientów
-                'ultra_precision_mode': False,
-                'advanced_color_analysis': False,
-                'focus_main_areas': True
-            }
-        elif complexity_score > 0.65:  # VERY COMPLEX
-            return {
-                'max_colors': 22,
-                'tolerance_factor': 0.45,
-                'detail_preservation': 'balanced',
-                'min_region_size': 400,
-                'color_flattening': True,
-                'quality_enhancement': 'ai_high',
-                'curve_smoothing': 'adaptive',
-                'edge_enhancement': True,
-                'micro_detail_preservation': False,
-                'gradient_preservation': False,
-                'ultra_precision_mode': False,
-                'advanced_color_analysis': False,
-                'focus_main_areas': True
-            }
-        elif complexity_score > 0.5:  # COMPLEX
-            return {
-                'max_colors': 20,
-                'tolerance_factor': 0.5,
-                'detail_preservation': 'balanced',
-                'min_region_size': 300,
-                'color_flattening': True,
-                'quality_enhancement': 'ai_medium',
-                'curve_smoothing': 'adaptive',
-                'edge_enhancement': True,
-                'micro_detail_preservation': False,
-                'gradient_preservation': False,
-                'ultra_precision_mode': False,
-                'advanced_color_analysis': False,
-                'focus_main_areas': True
-            }
-        elif complexity_score > 0.35:  # MEDIUM
-            return {
-                'max_colors': 18,
-                'tolerance_factor': 0.55,
-                'detail_preservation': 'balanced',
-                'min_region_size': 200,
-                'color_flattening': True,
-                'quality_enhancement': 'ai_medium',
-                'curve_smoothing': 'adaptive',
-                'edge_enhancement': True,
-                'micro_detail_preservation': False,
-                'gradient_preservation': False,
-                'ultra_precision_mode': False,
-                'advanced_color_analysis': False,
-                'focus_main_areas': True
-            }
-        else:  # SIMPLE
-            return {
-                'max_colors': 15,
-                'tolerance_factor': 0.6,
-                'detail_preservation': 'balanced',
-                'min_region_size': 150,
-                'color_flattening': True,
-                'quality_enhancement': 'ai_medium',
-                'curve_smoothing': 'adaptive',
-                'edge_enhancement': True,
-                'micro_detail_preservation': False,
-                'gradient_preservation': False,
-                'ultra_precision_mode': False,
-                'advanced_color_analysis': False,
-                'focus_main_areas': True
-            }
+        # ULTRA PREMIUM ADAPTIVE PARAMETERS
+        return generate_ultra_premium_parameters(complexity_score, cartoon_score, line_art_score, 
+                                                edge_density, color_complexity, detail_density)
 
     except Exception as e:
         print(f"⚠️ Błąd analizy złożoności: {e}")
-        return {
-            'max_colors': 45,
-            'tolerance_factor': 0.3,
-            'detail_preservation': 'ai_high',
-            'min_region_size': 1,
-            'color_flattening': False,
-            'quality_enhancement': 'ai_high',
-            'curve_smoothing': 'adaptive',
-            'edge_enhancement': True,
-            'micro_detail_preservation': True,
-            'gradient_preservation': True
-        }
+        return get_fallback_premium_parameters()
 
 def create_simple_svg_path(contour):
     """Tworzy prostą ścieżkę SVG"""
@@ -1875,6 +1817,639 @@ def extract_main_area_colors(img_array, max_colors, params):
         if len(pixels) > 100000:
             step = max(1, int(1 / sample_rate))
             pixels = pixels[::step]
+
+def analyze_edge_continuity(img_array):
+    """Analizuje ciągłość krawędzi - kluczowe dla jakości cartoon/anime"""
+    try:
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # Gradients w różnych kierunkach
+        grad_x = ndimage.sobel(gray, axis=1)
+        grad_y = ndimage.sobel(gray, axis=0)
+        grad_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+        
+        # Analiza ciągłości przez łączenie sąsiadujących krawędzi
+        edge_mask = grad_magnitude > np.percentile(grad_magnitude, 85)
+        
+        # Morfologiczne operacje dla ciągłości
+        from scipy.ndimage import binary_closing, binary_opening
+        continuous_edges = binary_closing(edge_mask, structure=np.ones((3, 3)))
+        continuous_edges = binary_opening(continuous_edges, structure=np.ones((2, 2)))
+        
+        # Stosunek ciągłych krawędzi do wszystkich
+        continuity_ratio = np.sum(continuous_edges) / max(1, np.sum(edge_mask))
+        
+        return min(1.0, continuity_ratio * 1.2)
+    except:
+        return 0.5
+
+def analyze_color_harmony(img_array):
+    """Analizuje harmonię kolorów - ważne dla estetyki wektoryzacji"""
+    try:
+        # Konwersja do HSV dla analizy harmonii
+        from skimage.color import rgb2hsv
+        hsv_img = rgb2hsv(img_array / 255.0)
+        
+        # Pobierz dominujące odcienie
+        hue_values = hsv_img[:,:,0].flatten()
+        saturation_values = hsv_img[:,:,1].flatten()
+        
+        # Usuń nienasycone kolory z analizy
+        saturated_mask = saturation_values > 0.3
+        if np.sum(saturated_mask) == 0:
+            return 0.8  # Obrazy monochromatyczne mają dobrą harmonię
+        
+        saturated_hues = hue_values[saturated_mask]
+        
+        # Analiza dystrybucji odcieni
+        hue_hist, _ = np.histogram(saturated_hues, bins=36, range=(0, 1))
+        
+        # Sprawdź czy kolory tworzą harmonijne grupy
+        peak_indices = np.where(hue_hist > np.percentile(hue_hist, 75))[0]
+        
+        if len(peak_indices) == 0:
+            return 0.5
+        
+        # Oblicz średnie odległości między pikami
+        if len(peak_indices) > 1:
+            peak_distances = []
+            for i in range(len(peak_indices) - 1):
+                dist = min(abs(peak_indices[i+1] - peak_indices[i]), 
+                          36 - abs(peak_indices[i+1] - peak_indices[i]))
+                peak_distances.append(dist)
+            
+            avg_distance = np.mean(peak_distances)
+            # Harmonijne relacje: 6 (komplementarne), 12 (triadyczne), 18 (analogowe)
+            harmony_distances = [6, 9, 12, 18]
+            harmony_score = 0
+            
+            for harm_dist in harmony_distances:
+                if abs(avg_distance - harm_dist) <= 2:
+                    harmony_score = 1.0 - abs(avg_distance - harm_dist) / 6
+                    break
+            
+            return max(0.3, harmony_score)
+        
+        return 0.7  # Pojedynczy kolor dominujący
+    except:
+        return 0.5
+
+def analyze_texture_directionality(img_array):
+    """Analizuje kierunkowość tekstur"""
+    try:
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # Gradienty w różnych kierunkach
+        directions = []
+        for angle in [0, 45, 90, 135]:
+            # Sobel w różnych kierunkach
+            if angle == 0:
+                grad = ndimage.sobel(gray, axis=1)
+            elif angle == 45:
+                kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]) / 8
+                grad = ndimage.convolve(gray, kernel)
+            elif angle == 90:
+                grad = ndimage.sobel(gray, axis=0)
+            else:  # 135
+                kernel = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]]) / 8
+                grad = ndimage.convolve(gray, kernel)
+            
+            directions.append(np.mean(np.abs(grad)))
+        
+        # Sprawdź czy jest dominujący kierunek
+        max_direction = np.max(directions)
+        avg_direction = np.mean(directions)
+        
+        if avg_direction == 0:
+            return 0.5
+        
+        directionality = max_direction / avg_direction
+        return min(1.0, (directionality - 1) / 3)
+    except:
+        return 0.3
+
+def analyze_shape_regularity(img_array):
+    """Analizuje regularność kształtów"""
+    try:
+        from scipy import ndimage
+        from skimage import measure
+        
+        gray = np.mean(img_array, axis=2)
+        
+        # Threshold dla wykrywania kształtów
+        threshold = np.percentile(gray, 50)
+        binary = gray > threshold
+        
+        # Znajdź kontury
+        contours = measure.find_contours(binary, 0.5)
+        
+        if len(contours) == 0:
+            return 0.5
+        
+        regularities = []
+        
+        for contour in contours[:10]:  # Ogranicz do 10 największych
+            if len(contour) < 10:
+                continue
+            
+            # Oblicz regularność przez analiza obwodu vs powierzchni
+            area = 0.5 * abs(sum(contour[i,0] * contour[i+1,1] - contour[i+1,0] * contour[i,1] 
+                                for i in range(-1, len(contour)-1)))
+            
+            if area == 0:
+                continue
+            
+            perimeter = np.sum(np.sqrt(np.sum(np.diff(contour, axis=0)**2, axis=1)))
+            
+            if perimeter == 0:
+                continue
+            
+            # Współczynnik regularności (im bliżej okręgu, tym wyższy)
+            circularity = 4 * np.pi * area / (perimeter ** 2)
+            regularities.append(min(1.0, circularity))
+        
+        if regularities:
+            return np.mean(regularities)
+        
+        return 0.5
+    except:
+        return 0.5
+
+def calculate_visual_saliency(img_array):
+    """Oblicza wizualną saliency - gdzie skupia się uwaga"""
+    try:
+        from scipy import ndimage
+        
+        # Konwersja do przestrzeni LAB dla lepszej percepcji
+        try:
+            from skimage.color import rgb2lab
+            lab_img = rgb2lab(img_array / 255.0)
+        except:
+            # Fallback do grayscale
+            lab_img = np.mean(img_array, axis=2)
+            lab_img = lab_img[:,:,np.newaxis]
+        
+        saliency_maps = []
+        
+        # 1. Saliency bazująca na kontraście
+        if lab_img.ndim == 3 and lab_img.shape[2] >= 3:
+            for channel in range(min(3, lab_img.shape[2])):
+                channel_data = lab_img[:,:,channel]
+                
+                # Lokalne kontrast
+                mean_filtered = ndimage.uniform_filter(channel_data, size=9)
+                contrast_map = np.abs(channel_data - mean_filtered)
+                saliency_maps.append(contrast_map)
+        else:
+            # Fallback dla grayscale
+            gray = lab_img[:,:,0] if lab_img.ndim == 3 else lab_img
+            mean_filtered = ndimage.uniform_filter(gray, size=9)
+            contrast_map = np.abs(gray - mean_filtered)
+            saliency_maps.append(contrast_map)
+        
+        # 2. Saliency bazująca na krawędziach
+        if lab_img.ndim == 3:
+            gray = np.mean(lab_img, axis=2)
+        else:
+            gray = lab_img
+        
+        sobel_h = ndimage.sobel(gray, axis=0)
+        sobel_v = ndimage.sobel(gray, axis=1)
+        edge_saliency = np.sqrt(sobel_h**2 + sobel_v**2)
+        saliency_maps.append(edge_saliency)
+        
+        # Kombinuj mapy saliency
+        combined_saliency = np.mean(saliency_maps, axis=0)
+        
+        # Normalizuj i oblicz średnią saliency
+        normalized_saliency = (combined_saliency - np.min(combined_saliency)) / \
+                             (np.max(combined_saliency) - np.min(combined_saliency) + 1e-8)
+        
+        return np.mean(normalized_saliency)
+    except:
+        return 0.5
+
+def detect_cartoon_style_features(img_array):
+    """Wykrywa cechy stylu cartoon/anime"""
+    try:
+        from scipy import ndimage
+        
+        # 1. Analiza płaskich obszarów kolorów (typowe dla cartoon)
+        flat_areas_score = analyze_flat_color_areas(img_array)
+        
+        # 2. Analiza ostrych krawędzi (typowe dla cartoon)
+        sharp_edges_score = analyze_sharp_edges(img_array)
+        
+        # 3. Analiza ograniczonej palety kolorów
+        limited_palette_score = analyze_limited_palette(img_array)
+        
+        # 4. Analiza wysokiego kontrastu
+        high_contrast_score = analyze_high_contrast(img_array)
+        
+        # Kombinuj wyniki
+        cartoon_score = (
+            flat_areas_score * 0.3 +
+            sharp_edges_score * 0.3 +
+            limited_palette_score * 0.25 +
+            high_contrast_score * 0.15
+        )
+        
+        return min(1.0, cartoon_score)
+    except:
+        return 0.3
+
+def detect_line_art_quality(img_array):
+    """Wykrywa jakość line art - ważne dla dokładnej wektoryzacji"""
+    try:
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # 1. Analiza grubości linii
+        line_thickness_score = analyze_line_thickness_consistency(gray)
+        
+        # 2. Analiza ciągłości linii
+        line_continuity_score = analyze_line_continuity(gray)
+        
+        # 3. Analiza czystości linii (brak artefaktów)
+        line_cleanliness_score = analyze_line_cleanliness(gray)
+        
+        # Kombinuj wyniki
+        line_art_score = (
+            line_thickness_score * 0.4 +
+            line_continuity_score * 0.4 +
+            line_cleanliness_score * 0.2
+        )
+        
+        return min(1.0, line_art_score)
+    except:
+        return 0.3
+
+def analyze_flat_color_areas(img_array):
+    """Analizuje obecność płaskich obszarów kolorów"""
+    try:
+        from scipy import ndimage
+        
+        # Wygładź obraz dla lepszej analizy
+        smoothed = ndimage.gaussian_filter(img_array.astype(float), sigma=1.0)
+        
+        # Oblicz lokalne odchylenie standardowe
+        local_variance = np.zeros_like(smoothed[:,:,0])
+        
+        for channel in range(3):
+            channel_data = smoothed[:,:,channel]
+            mean_filtered = ndimage.uniform_filter(channel_data, size=5)
+            var_filtered = ndimage.uniform_filter(channel_data**2, size=5)
+            local_var = var_filtered - mean_filtered**2
+            local_variance += local_var
+        
+        local_variance /= 3
+        
+        # Obszary z małą wariancją = płaskie obszary
+        flat_threshold = np.percentile(local_variance, 30)
+        flat_areas = local_variance <= flat_threshold
+        
+        flat_ratio = np.sum(flat_areas) / flat_areas.size
+        return min(1.0, flat_ratio * 2)
+    except:
+        return 0.3
+
+def analyze_sharp_edges(img_array):
+    """Analizuje ostrość krawędzi"""
+    try:
+        from scipy import ndimage
+        gray = np.mean(img_array, axis=2)
+        
+        # Laplacian dla wykrywania ostrych krawędzi
+        laplacian = ndimage.laplace(gray)
+        sharp_edges = np.abs(laplacian) > np.percentile(np.abs(laplacian), 85)
+        
+        # Gradient magnitude
+        grad_x = ndimage.sobel(gray, axis=1)
+        grad_y = ndimage.sobel(gray, axis=0)
+        grad_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+        
+        # Wysoki gradient = ostre krawędzie
+        sharp_gradient = grad_magnitude > np.percentile(grad_magnitude, 80)
+        
+        # Kombinuj wskaźniki
+        combined_sharp = sharp_edges | sharp_gradient
+        sharpness_ratio = np.sum(combined_sharp) / combined_sharp.size
+        
+        return min(1.0, sharpness_ratio * 10)
+    except:
+        return 0.3
+
+def analyze_limited_palette(img_array):
+    """Analizuje ograniczoną paletę kolorów (typowe dla cartoon)"""
+    try:
+        # Kwantyzuj kolory do sprawdzenia różnorodności
+        quantized = (img_array // 32) * 32  # Redukcja do 8 poziomów na kanał
+        
+        # Policza unikalne kolory
+        unique_colors = np.unique(quantized.reshape(-1, 3), axis=0)
+        num_unique = len(unique_colors)
+        
+        total_pixels = img_array.shape[0] * img_array.shape[1]
+        
+        # Im mniej unikalnych kolorów, tym wyższy wynik
+        if total_pixels > 0:
+            color_diversity = num_unique / total_pixels
+            limited_score = 1.0 - min(1.0, color_diversity * 100)
+            return limited_score
+        
+        return 0.5
+    except:
+        return 0.3
+
+def analyze_high_contrast(img_array):
+    """Analizuje wysoki kontrast obrazu"""
+    try:
+        # Konwersja do jasności
+        luminance = 0.299 * img_array[:,:,0] + 0.587 * img_array[:,:,1] + 0.114 * img_array[:,:,2]
+        
+        # Histogram jasności
+        hist, bins = np.histogram(luminance, bins=50, range=(0, 255))
+        
+        # Sprawdź czy są wyraźne piki na końcach (wysoki kontrast)
+        dark_pixels = np.sum(hist[:10])  # Pierwsze 20%
+        bright_pixels = np.sum(hist[-10:])  # Ostatnie 20%
+        middle_pixels = np.sum(hist[15:35])  # Środek
+        
+        total_pixels = luminance.size
+        
+        # Wysoki kontrast = dużo bardzo ciemnych i bardzo jasnych pikseli
+        contrast_score = (dark_pixels + bright_pixels) / total_pixels
+        
+        # Dodatkowo sprawdź rozrzut
+        std_luminance = np.std(luminance)
+        normalized_std = std_luminance / 255.0
+        
+        final_score = (contrast_score * 0.7 + normalized_std * 0.3)
+        return min(1.0, final_score * 1.5)
+    except:
+        return 0.3
+
+def analyze_line_thickness_consistency(gray):
+    """Analizuje konsystencję grubości linii"""
+    try:
+        from scipy import ndimage
+        
+        # Wykryj krawędzie
+        edges = ndimage.sobel(gray)
+        edge_mask = edges > np.percentile(edges, 90)
+        
+        if np.sum(edge_mask) == 0:
+            return 0.3
+        
+        # Morfologiczne analizy grubości
+        from scipy.ndimage import binary_erosion, binary_dilation
+        
+        # Różne grubości erozji
+        thickness_scores = []
+        for erosion_size in range(1, 4):
+            eroded = binary_erosion(edge_mask, iterations=erosion_size)
+            remaining_ratio = np.sum(eroded) / np.sum(edge_mask)
+            thickness_scores.append(remaining_ratio)
+        
+        # Konsystentna grubość = równomierne zmniejszanie
+        if len(thickness_scores) > 1:
+            consistency = 1.0 - np.std(thickness_scores)
+            return max(0.0, consistency)
+        
+        return 0.5
+    except:
+        return 0.3
+
+def analyze_line_continuity(gray):
+    """Analizuje ciągłość linii"""
+    try:
+        from scipy import ndimage
+        
+        edges = ndimage.sobel(gray)
+        edge_mask = edges > np.percentile(edges, 85)
+        
+        # Morfologiczne zamknięcie dla ciągłości
+        from scipy.ndimage import binary_closing
+        closed_edges = binary_closing(edge_mask, structure=np.ones((3, 3)))
+        
+        # Stosunek zamkniętych do oryginalnych
+        if np.sum(edge_mask) > 0:
+            continuity_ratio = np.sum(closed_edges) / np.sum(edge_mask)
+            return min(1.0, continuity_ratio)
+        
+        return 0.5
+    except:
+        return 0.3
+
+def analyze_line_cleanliness(gray):
+    """Analizuje czystość linii (brak artefaktów)"""
+    try:
+        from scipy import ndimage
+        
+        # Porównaj oryginał z wygładzonym
+        smoothed = ndimage.gaussian_filter(gray, sigma=0.5)
+        difference = np.abs(gray - smoothed)
+        
+        # Małe różnice = czyste linie
+        noise_level = np.mean(difference)
+        cleanliness = 1.0 - min(1.0, noise_level / 50.0)
+        
+        return max(0.0, cleanliness)
+    except:
+        return 0.5
+
+def calculate_advanced_complexity_score(*args):
+    """Zaawansowany algorytm obliczania złożoności z wszystkimi parametrami"""
+    try:
+        (edge_density, edge_sharpness, edge_connectivity, edge_continuity,
+         color_complexity, color_variance, color_gradients, color_harmony,
+         texture_complexity, pattern_regularity, texture_directionality,
+         geometric_complexity, curve_complexity, shape_regularity,
+         perceptual_importance, detail_density, visual_saliency,
+         cartoon_score, line_art_score) = args
+        
+        # Normalizuj color_complexity
+        color_complexity_norm = min(1.0, color_complexity / 500.0)
+        
+        # Zaawansowane wagi bazujące na stylu obrazu
+        if cartoon_score > 0.6:  # Cartoon style
+            weights = {
+                'edge': 0.30,      # Krawędzie bardzo ważne dla cartoon
+                'color': 0.25,     # Kolory ważne
+                'style': 0.20,     # Styl cartoon
+                'geometry': 0.15,  # Geometria
+                'perception': 0.10 # Percepcja
+            }
+        elif line_art_score > 0.6:  # Line art style
+            weights = {
+                'edge': 0.35,      # Krawędzie najważniejsze
+                'style': 0.25,     # Jakość line art
+                'geometry': 0.20,  # Geometria
+                'color': 0.15,     # Kolory mniej ważne
+                'perception': 0.05
+            }
+        else:  # Standard/photo style
+            weights = {
+                'edge': 0.25,
+                'color': 0.25,
+                'perception': 0.20,
+                'geometry': 0.15,
+                'style': 0.15
+            }
+        
+        # Komponenty złożoności
+        edge_component = (
+            edge_density * 0.3 + 
+            edge_sharpness * 0.3 + 
+            edge_connectivity * 0.2 + 
+            edge_continuity * 0.2
+        )
+        
+        color_component = (
+            color_complexity_norm * 0.3 + 
+            color_variance * 0.25 + 
+            color_gradients * 0.25 + 
+            color_harmony * 0.2
+        )
+        
+        style_component = (cartoon_score + line_art_score) / 2
+        
+        geometry_component = (
+            geometric_complexity * 0.3 + 
+            curve_complexity * 0.3 + 
+            shape_regularity * 0.2 + 
+            texture_directionality * 0.2
+        )
+        
+        perception_component = (
+            perceptual_importance * 0.4 + 
+            detail_density * 0.3 + 
+            visual_saliency * 0.3
+        )
+        
+        # Ważona suma z zaawansowanymi wagami
+        overall_score = (
+            edge_component * weights['edge'] +
+            color_component * weights['color'] +
+            style_component * weights['style'] +
+            geometry_component * weights['geometry'] +
+            perception_component * weights['perception']
+        )
+        
+        # Nieliniowa transformacja z bonus za wysoką jakość
+        if cartoon_score > 0.7 or line_art_score > 0.7:
+            overall_score *= 1.1  # Bonus za wysoką jakość stylu
+        
+        adjusted_score = np.power(overall_score, 0.85)
+        return min(1.0, max(0.0, adjusted_score))
+    except:
+        return 0.5
+
+def generate_ultra_premium_parameters(complexity_score, cartoon_score, line_art_score, 
+                                    edge_density, color_complexity, detail_density):
+    """Generuje ultra premium parametry bazując na AI analysis"""
+    try:
+        # Bazowe parametry
+        base_params = {
+            'max_colors': 30,
+            'tolerance_factor': 0.3,
+            'detail_preservation': 'ultra_high',
+            'min_region_size': 50,
+            'color_flattening': False,
+            'quality_enhancement': 'ai_ultra',
+            'curve_smoothing': 'ai_adaptive',
+            'edge_enhancement': True,
+            'micro_detail_preservation': True,
+            'gradient_preservation': True,
+            'ultra_precision_mode': True,
+            'advanced_color_analysis': True,
+            'focus_main_areas': False,
+            'cartoon_optimization': False,
+            'line_art_optimization': False
+        }
+        
+        # Adaptacja dla cartoon style
+        if cartoon_score > 0.6:
+            base_params.update({
+                'max_colors': min(35, int(25 + cartoon_score * 15)),
+                'tolerance_factor': 0.25,  # Mniejsza tolerancja dla ostrych krawędzi
+                'min_region_size': max(30, int(100 - cartoon_score * 50)),
+                'cartoon_optimization': True,
+                'edge_enhancement': True,
+                'curve_smoothing': 'cartoon_adaptive'
+            })
+        
+        # Adaptacja dla line art
+        if line_art_score > 0.6:
+            base_params.update({
+                'max_colors': min(40, int(20 + line_art_score * 25)),
+                'tolerance_factor': 0.2,  # Bardzo mała tolerancja dla precyzji
+                'min_region_size': max(20, int(80 - line_art_score * 40)),
+                'line_art_optimization': True,
+                'ultra_precision_mode': True,
+                'curve_smoothing': 'line_art_adaptive'
+            })
+        
+        # Adaptacja bazująca na complexity_score
+        if complexity_score > 0.8:  # ULTRA COMPLEX
+            base_params.update({
+                'max_colors': min(45, base_params['max_colors'] + 10),
+                'tolerance_factor': max(0.15, base_params['tolerance_factor'] - 0.1),
+                'min_region_size': max(10, base_params['min_region_size'] - 20)
+            })
+        elif complexity_score > 0.6:  # HIGH COMPLEX
+            base_params.update({
+                'max_colors': min(40, base_params['max_colors'] + 5),
+                'tolerance_factor': max(0.2, base_params['tolerance_factor'] - 0.05)
+            })
+        elif complexity_score < 0.3:  # SIMPLE
+            base_params.update({
+                'max_colors': max(15, base_params['max_colors'] - 10),
+                'tolerance_factor': min(0.6, base_params['tolerance_factor'] + 0.2),
+                'min_region_size': min(200, base_params['min_region_size'] + 100)
+            })
+        
+        # Adaptacja bazująca na edge_density
+        if edge_density > 0.3:
+            base_params['edge_enhancement'] = True
+            base_params['curve_smoothing'] = 'edge_preserving'
+        
+        # Adaptacja bazująca na color_complexity
+        if color_complexity > 1000:
+            base_params['max_colors'] = min(50, base_params['max_colors'] + 8)
+            base_params['advanced_color_analysis'] = True
+        
+        # Adaptacja bazująca na detail_density
+        if detail_density > 0.6:
+            base_params['micro_detail_preservation'] = True
+            base_params['min_region_size'] = max(5, base_params['min_region_size'] - 30)
+        
+        return base_params
+    except:
+        return get_fallback_premium_parameters()
+
+def get_fallback_premium_parameters():
+    """Fallback premium parameters"""
+    return {
+        'max_colors': 35,
+        'tolerance_factor': 0.3,
+        'detail_preservation': 'ultra_high',
+        'min_region_size': 50,
+        'color_flattening': False,
+        'quality_enhancement': 'ai_ultra',
+        'curve_smoothing': 'ai_adaptive',
+        'edge_enhancement': True,
+        'micro_detail_preservation': True,
+        'gradient_preservation': True,
+        'ultra_precision_mode': True,
+        'advanced_color_analysis': True,
+        'focus_main_areas': False,
+        'cartoon_optimization': False,
+        'line_art_optimization': False
+    }
+
         
         # K-means z dużą liczbą iteracji
         kmeans = KMeans(n_clusters=min(max_colors, len(pixels)), random_state=42, n_init=50, max_iter=1000)
@@ -1922,6 +2497,732 @@ def aggressive_color_merging(colors, max_colors, img_array, tolerance_factor):
         for i, color in enumerate(colors):
             if i in used_indices:
                 continue
+
+def extract_perceptual_important_colors_ultra(img_array, max_colors, params):
+    """Wykrywa kolory o najwyższej ważności perceptualnej"""
+    try:
+        from sklearn.cluster import KMeans
+        
+        # Konwersja do przestrzeni LAB dla lepszej percepcji
+        try:
+            from skimage.color import rgb2lab, lab2rgb
+            lab_img = rgb2lab(img_array / 255.0)
+        except:
+            lab_img = img_array / 255.0  # Fallback
+        
+        # Analiza saliency do identyfikacji ważnych obszarów
+        saliency_mask = calculate_saliency_mask(img_array)
+        
+        # Ekstraktuj piksele z obszarów wysokiej saliency
+        important_pixels = []
+        
+        # Próbkowanie z obszarów wysokiej saliency
+        high_saliency_indices = np.where(saliency_mask > np.percentile(saliency_mask, 70))
+        if len(high_saliency_indices[0]) > 0:
+            sample_size = min(10000, len(high_saliency_indices[0]))
+            sample_indices = np.random.choice(len(high_saliency_indices[0]), 
+                                            size=sample_size, replace=False)
+            
+            for idx in sample_indices:
+                y, x = high_saliency_indices[0][idx], high_saliency_indices[1][idx]
+                if lab_img.ndim == 3:
+                    important_pixels.append(lab_img[y, x])
+                else:
+                    important_pixels.append(img_array[y, x])
+        
+        if not important_pixels:
+            return []
+        
+        important_pixels = np.array(important_pixels)
+        
+        # K-means clustering w przestrzeni LAB
+        kmeans = KMeans(n_clusters=min(max_colors, len(important_pixels)), 
+                       random_state=42, n_init=30, max_iter=500)
+        kmeans.fit(important_pixels)
+        
+        # Konwersja z powrotem do RGB
+        colors = []
+        for center in kmeans.cluster_centers_:
+            try:
+                if lab_img.ndim == 3 and lab_img.shape[2] == 3:
+                    rgb = lab2rgb(center.reshape(1, 1, 3))[0, 0] * 255
+                    rgb_color = tuple(np.clip(rgb, 0, 255).astype(int))
+                else:
+                    rgb_color = tuple(np.clip(center, 0, 255).astype(int))
+                colors.append(rgb_color)
+            except:
+                # Fallback
+                rgb_color = tuple(np.clip(center, 0, 255).astype(int))
+                colors.append(rgb_color)
+        
+        return colors
+    except:
+        return []
+
+def calculate_saliency_mask(img_array):
+    """Oblicza maskę saliency dla ważnych obszarów"""
+    try:
+        from scipy import ndimage
+        
+        # Multi-scale saliency analysis
+        saliency_maps = []
+        
+        for scale in [1, 2, 4]:
+            scaled_img = img_array[::scale, ::scale]
+            
+            # Kontrast lokalny
+            gray = np.mean(scaled_img, axis=2)
+            mean_filtered = ndimage.uniform_filter(gray, size=5)
+            contrast_map = np.abs(gray - mean_filtered)
+            
+            # Przeskaluj z powrotem
+            if scale > 1:
+                from scipy.ndimage import zoom
+                contrast_map = zoom(contrast_map, scale, order=1)
+                
+                # Dopasuj rozmiar
+                target_shape = img_array.shape[:2]
+                if contrast_map.shape != target_shape:
+                    h_scale = target_shape[0] / contrast_map.shape[0]
+                    w_scale = target_shape[1] / contrast_map.shape[1]
+                    contrast_map = zoom(contrast_map, (h_scale, w_scale), order=1)
+            
+            saliency_maps.append(contrast_map)
+        
+        # Kombinuj mapy saliency
+        combined_saliency = np.mean(saliency_maps, axis=0)
+        
+        # Normalizuj
+        min_val, max_val = np.min(combined_saliency), np.max(combined_saliency)
+        if max_val > min_val:
+            normalized_saliency = (combined_saliency - min_val) / (max_val - min_val)
+        else:
+            normalized_saliency = np.ones_like(combined_saliency) * 0.5
+        
+        return normalized_saliency
+    except:
+        return np.ones(img_array.shape[:2]) * 0.5
+
+def extract_cartoon_optimized_colors(img_array, max_colors, params):
+    """Ekstraktuje kolory zoptymalizowane dla stylu cartoon"""
+    try:
+        from sklearn.cluster import KMeans
+        
+        # 1. Wykryj płaskie obszary kolorów (typowe dla cartoon)
+        flat_areas_mask = detect_flat_color_areas(img_array)
+        
+        # 2. Ekstraktuj kolory z płaskich obszarów
+        flat_pixels = img_array[flat_areas_mask]
+        
+        if len(flat_pixels) == 0:
+            return []
+        
+        # 3. Aggressive color quantization dla cartoon look
+        quantized_pixels = (flat_pixels // 16) * 16  # Mocna kwantyzacja
+        
+        # 4. K-means z mniejszą liczbą klastrów dla cartoon style
+        n_clusters = min(max_colors, len(quantized_pixels) // 50, 12)
+        if n_clusters <= 0:
+            return []
+        
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=20)
+        kmeans.fit(quantized_pixels)
+        
+        # 5. Post-process dla cartoon colors
+        cartoon_colors = []
+        for center in kmeans.cluster_centers_:
+            # Zwiększ nasycenie dla cartoon look
+            hsv_color = rgb_to_hsv_precise(center)
+            hsv_color[1] = min(1.0, hsv_color[1] * 1.2)  # Zwiększ nasycenie
+            
+            # Konwersja z powrotem do RGB
+            rgb_color = hsv_to_rgb_precise(hsv_color)
+            cartoon_colors.append(tuple(np.clip(rgb_color, 0, 255).astype(int)))
+        
+        return cartoon_colors
+    except:
+        return []
+
+def detect_flat_color_areas(img_array):
+    """Wykrywa płaskie obszary kolorów"""
+    try:
+        from scipy import ndimage
+        
+        # Oblicz lokalne odchylenie standardowe dla każdego kanału
+        local_variance = np.zeros(img_array.shape[:2])
+        
+        for channel in range(3):
+            channel_data = img_array[:,:,channel].astype(float)
+            mean_filtered = ndimage.uniform_filter(channel_data, size=5)
+            var_filtered = ndimage.uniform_filter(channel_data**2, size=5)
+            local_var = var_filtered - mean_filtered**2
+            local_variance += local_var
+        
+        local_variance /= 3
+        
+        # Obszary z małą wariancją = płaskie
+        flat_threshold = np.percentile(local_variance, 25)
+        flat_mask = local_variance <= flat_threshold
+        
+        return flat_mask
+    except:
+        return np.ones(img_array.shape[:2], dtype=bool)
+
+def hsv_to_rgb_precise(hsv):
+    """Precyzyjna konwersja HSV do RGB"""
+    try:
+        h, s, v = hsv
+        h = h * 360  # Konwertuj do stopni
+        
+        c = v * s
+        x = c * (1 - abs((h / 60) % 2 - 1))
+        m = v - c
+        
+        if 0 <= h < 60:
+            r, g, b = c, x, 0
+        elif 60 <= h < 120:
+            r, g, b = x, c, 0
+        elif 120 <= h < 180:
+            r, g, b = 0, c, x
+        elif 180 <= h < 240:
+            r, g, b = 0, x, c
+        elif 240 <= h < 300:
+            r, g, b = x, 0, c
+        else:
+            r, g, b = c, 0, x
+        
+        return np.array([(r + m) * 255, (g + m) * 255, (b + m) * 255])
+    except:
+        return hsv * 255
+
+def extract_line_art_colors(img_array, max_colors, params):
+    """Ekstraktuje kolory zoptymalizowane dla line art"""
+    try:
+        from sklearn.cluster import KMeans
+        from scipy import ndimage
+        
+        # 1. Wykryj linie przez analiza krawędzi
+        gray = np.mean(img_array, axis=2)
+        edges = ndimage.sobel(gray)
+        
+        # 2. Utworz maskę linii
+        line_threshold = np.percentile(edges, 90)
+        line_mask = edges > line_threshold
+        
+        # 3. Rozszerz maskę, żeby złapać kolory przy liniach
+        dilated_mask = ndimage.binary_dilation(line_mask, iterations=2)
+        
+        # 4. Ekstraktuj kolory z obszarów linii i otoczenia
+        line_pixels = img_array[dilated_mask]
+        
+        if len(line_pixels) == 0:
+            return []
+        
+        # 5. Dodaj też najciemniejsze i najjaśniejsze piksele (typowe dla line art)
+        brightness = np.mean(img_array, axis=2)
+        dark_pixels = img_array[brightness < np.percentile(brightness, 10)]
+        bright_pixels = img_array[brightness > np.percentile(brightness, 90)]
+        
+        # Kombinuj wszystkie piksele
+        all_pixels = np.vstack([line_pixels, dark_pixels[:1000], bright_pixels[:1000]])
+        
+        # 6. K-means clustering
+        n_clusters = min(max_colors, len(all_pixels) // 100, 8)
+        if n_clusters <= 0:
+            return []
+        
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=15)
+        kmeans.fit(all_pixels)
+        
+        colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        return colors
+    except:
+        return []
+
+def extract_multi_scale_dominant_colors(img_array, max_colors, params):
+    """Ekstraktuje kolory dominujące w różnych skalach"""
+    try:
+        from sklearn.cluster import KMeans
+        colors = []
+        
+        # Analiza w różnych rozdzielczościach
+        scales = [1, 2, 4]
+        colors_per_scale = max(1, max_colors // len(scales))
+        
+        for scale in scales:
+            # Zmniejsz obraz
+            scaled_img = img_array[::scale, ::scale]
+            
+            if scaled_img.size == 0:
+                continue
+            
+            # Reshape do pikseli
+            pixels = scaled_img.reshape(-1, 3)
+            
+            # Próbkowanie dla wydajności
+            if len(pixels) > 5000:
+                sample_indices = np.random.choice(len(pixels), 5000, replace=False)
+                pixels = pixels[sample_indices]
+            
+            # K-means dla tej skali
+            n_clusters = min(colors_per_scale, len(pixels))
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42 + scale, n_init=10)
+                kmeans.fit(pixels)
+                
+                scale_colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+                colors.extend(scale_colors)
+        
+        return colors[:max_colors]
+    except:
+        return []
+
+def extract_edge_aware_colors(img_array, max_colors, params):
+    """Ekstraktuje kolory uwzględniając kontekst krawędzi"""
+    try:
+        from sklearn.cluster import KMeans
+        from scipy import ndimage
+        
+        # 1. Wykryj krawędzie w różnych kierunkach
+        gray = np.mean(img_array, axis=2)
+        
+        # Sobel w różnych kierunkach
+        edges_h = ndimage.sobel(gray, axis=0)
+        edges_v = ndimage.sobel(gray, axis=1)
+        edges_combined = np.sqrt(edges_h**2 + edges_v**2)
+        
+        # 2. Kategorie pikseli bazujące na położeniu względem krawędzi
+        edge_threshold = np.percentile(edges_combined, 80)
+        
+        # Na krawędziach
+        on_edge_mask = edges_combined > edge_threshold
+        
+        # Blisko krawędzi
+        near_edge_mask = ndimage.binary_dilation(on_edge_mask, iterations=2) & ~on_edge_mask
+        
+        # Daleko od krawędzi
+        far_from_edge_mask = ~ndimage.binary_dilation(on_edge_mask, iterations=4)
+        
+        colors = []
+        
+        # 3. Ekstraktuj kolory z każdej kategorii
+        for mask, name in [(on_edge_mask, "edge"), (near_edge_mask, "near"), (far_from_edge_mask, "far")]:
+            if np.sum(mask) == 0:
+                continue
+            
+            pixels = img_array[mask]
+            
+            if len(pixels) > 1000:
+                # Próbkowanie
+                sample_indices = np.random.choice(len(pixels), 1000, replace=False)
+                pixels = pixels[sample_indices]
+            
+            # K-means dla tej kategorii
+            n_clusters = min(max_colors // 3, len(pixels) // 50, 4)
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                kmeans.fit(pixels)
+                
+                category_colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+                colors.extend(category_colors)
+        
+        return colors[:max_colors]
+    except:
+        return []
+
+def extract_gradient_transition_colors(img_array, max_colors, params):
+    """Ekstraktuje kolory z obszarów gradientów i przejść"""
+    try:
+        from sklearn.cluster import KMeans
+        from scipy import ndimage
+        
+        # 1. Wykryj obszary gradientów
+        gradient_pixels = []
+        
+        for channel in range(3):
+            channel_data = img_array[:,:,channel].astype(float)
+            
+            # Gradient magnitude dla kanału
+            grad_x = ndimage.sobel(channel_data, axis=1)
+            grad_y = ndimage.sobel(channel_data, axis=0)
+            grad_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+            
+            # Obszary z umiarkowanym gradientem (przejścia)
+            moderate_gradient_mask = (
+                (grad_magnitude > np.percentile(grad_magnitude, 30)) &
+                (grad_magnitude < np.percentile(grad_magnitude, 80))
+            )
+            
+            # Ekstraktuj piksele z tych obszarów
+            if np.sum(moderate_gradient_mask) > 0:
+                channel_gradient_pixels = img_array[moderate_gradient_mask]
+                if len(channel_gradient_pixels) > 500:
+                    sample_indices = np.random.choice(len(channel_gradient_pixels), 500, replace=False)
+                    channel_gradient_pixels = channel_gradient_pixels[sample_indices]
+                
+                gradient_pixels.extend(channel_gradient_pixels)
+        
+        if not gradient_pixels:
+            return []
+        
+        gradient_pixels = np.array(gradient_pixels)
+        
+        # 2. K-means clustering dla kolorów gradientów
+        n_clusters = min(max_colors, len(gradient_pixels) // 100, 6)
+        if n_clusters > 0:
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=15)
+            kmeans.fit(gradient_pixels)
+            
+            colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+            return colors
+        
+        return []
+    except:
+        return []
+
+def ai_powered_color_refinement_ultra(colors, max_colors, img_array, params):
+    """Ultra zaawansowane rafinowanie kolorów z AI"""
+    try:
+        if not colors:
+            return []
+        
+        # 1. Zaawansowane usuwanie duplikatów
+        unique_colors = advanced_color_deduplication_ultra(colors, params)
+        
+        # 2. Intelligent color merging z kontekstem obrazu
+        merged_colors = intelligent_color_merging_ultra(unique_colors, img_array, params)
+        
+        # 3. Color harmony optimization
+        harmonized_colors = optimize_color_harmony(merged_colors, img_array, params)
+        
+        # 4. Perceptual validation
+        validated_colors = perceptual_color_validation(harmonized_colors, img_array, params)
+        
+        # 5. Final selection bazująca na ważności
+        final_colors = select_most_important_colors(validated_colors, max_colors, img_array, params)
+        
+        return final_colors[:max_colors]
+    except:
+        return colors[:max_colors]
+
+def advanced_color_deduplication_ultra(colors, params):
+    """Ultra zaawansowane usuwanie duplikatów"""
+    try:
+        if not colors:
+            return []
+        
+        tolerance = params.get('tolerance_factor', 0.3) * 30
+        final_colors = [colors[0]]
+        
+        for color in colors[1:]:
+            is_unique = True
+            
+            for existing in final_colors:
+                # Multi-space distance analysis
+                rgb_distance = np.sqrt(sum((a - b)**2 for a, b in zip(color, existing)))
+                
+                # LAB distance dla lepszej percepcji
+                try:
+                    from skimage.color import rgb2lab
+                    color_lab = rgb2lab(np.array(color).reshape(1, 1, 3) / 255.0)[0, 0]
+                    existing_lab = rgb2lab(np.array(existing).reshape(1, 1, 3) / 255.0)[0, 0]
+                    lab_distance = np.sqrt(np.sum((color_lab - existing_lab)**2))
+                    
+                    # Kombinuj odległości
+                    combined_distance = rgb_distance * 0.6 + lab_distance * 20 * 0.4
+                except:
+                    combined_distance = rgb_distance
+                
+                if combined_distance < tolerance:
+                    is_unique = False
+                    break
+            
+            if is_unique:
+                final_colors.append(color)
+        
+        return final_colors
+    except:
+        return colors
+
+def intelligent_color_merging_ultra(colors, img_array, params):
+    """Inteligentne łączenie kolorów z kontekstem obrazu"""
+    try:
+        if len(colors) <= 1:
+            return colors
+        
+        # Analiza częstotliwości każdego koloru w obrazie
+        color_frequencies = {}
+        for color in colors:
+            # Policz podobne piksele w obrazie
+            distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+            frequency = np.sum(distances < 30)
+            color_frequencies[color] = frequency
+        
+        # Sortuj według częstotliwości
+        sorted_colors = sorted(colors, key=lambda c: color_frequencies.get(c, 0), reverse=True)
+        
+        # Intelligent merging bazujący na częstotliwości i podobieństwie
+        merged_colors = []
+        tolerance = params.get('tolerance_factor', 0.3) * 40
+        
+        for color in sorted_colors:
+            should_merge = False
+            merge_target = None
+            
+            for existing in merged_colors:
+                distance = np.sqrt(sum((a - b)**2 for a, b in zip(color, existing)))
+                
+                # Sprawdź czy można bezpiecznie połączyć
+                existing_freq = color_frequencies.get(existing, 0)
+                color_freq = color_frequencies.get(color, 0)
+                
+                # Łącz tylko jeśli jeden kolor jest znacznie mniej częsty
+                if distance < tolerance and color_freq < existing_freq * 0.3:
+                    should_merge = True
+                    merge_target = existing
+                    break
+            
+            if not should_merge:
+                merged_colors.append(color)
+        
+        return merged_colors
+    except:
+        return colors
+
+def optimize_color_harmony(colors, img_array, params):
+    """Optymalizuje harmonię kolorów"""
+    try:
+        if len(colors) <= 3:
+            return colors
+        
+        # Konwersja do HSV dla analizy harmonii
+        hsv_colors = []
+        for color in colors:
+            hsv = rgb_to_hsv_precise(color)
+            hsv_colors.append(hsv)
+        
+        # Sortuj według odcienia
+        hsv_with_index = [(hsv, i) for i, hsv in enumerate(hsv_colors)]
+        hsv_with_index.sort(key=lambda x: x[0][0])  # Sortuj według hue
+        
+        # Sprawdź harmony rules
+        harmonized_indices = []
+        for hsv, original_index in hsv_with_index:
+            # Zachowaj kolory o wysokiej saturacji (ważne dla cartoon/anime)
+            if hsv[1] > 0.4:  # Wysoka saturacja
+                harmonized_indices.append(original_index)
+            # Zachowaj też bardzo ciemne i bardzo jasne (dla kontrastów)
+            elif hsv[2] < 0.2 or hsv[2] > 0.8:
+                harmonized_indices.append(original_index)
+        
+        # Jeśli za mało kolorów, dodaj najbardziej częste
+        if len(harmonized_indices) < len(colors) // 2:
+            for hsv, original_index in hsv_with_index:
+                if original_index not in harmonized_indices:
+                    harmonized_indices.append(original_index)
+                    if len(harmonized_indices) >= len(colors):
+                        break
+        
+        harmonized_colors = [colors[i] for i in harmonized_indices]
+        return harmonized_colors
+    except:
+        return colors
+
+def perceptual_color_validation(colors, img_array, params):
+    """Waliduje kolory pod kątem percepcji wizualnej"""
+    try:
+        validated_colors = []
+        
+        for color in colors:
+            # Sprawdź reprezentatywność koloru w obrazie
+            distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+            close_pixels = np.sum(distances < 25)
+            
+            # Sprawdź czy kolor ma wystarczającą reprezentację
+            total_pixels = img_array.shape[0] * img_array.shape[1]
+            representation = close_pixels / total_pixels
+            
+            # Akceptuj kolory z przynajmniej 0.1% reprezentacją lub bardzo nasycone
+            hsv = rgb_to_hsv_precise(color)
+            is_highly_saturated = hsv[1] > 0.7
+            is_extreme_brightness = hsv[2] < 0.1 or hsv[2] > 0.9
+            
+            if representation > 0.001 or is_highly_saturated or is_extreme_brightness:
+                validated_colors.append(color)
+        
+        return validated_colors if validated_colors else colors
+    except:
+        return colors
+
+def select_most_important_colors(colors, max_colors, img_array, params):
+    """Wybiera najbardziej ważne kolory"""
+    try:
+        if len(colors) <= max_colors:
+            return colors
+        
+        # Oblicz ważność każdego koloru
+        color_importance = []
+        
+        for color in colors:
+            importance_score = calculate_color_importance_ultra(color, img_array, params)
+            color_importance.append((importance_score, color))
+        
+        # Sortuj według ważności
+        color_importance.sort(reverse=True)
+        
+        # Wybierz najbardziej ważne
+        most_important = [color for score, color in color_importance[:max_colors]]
+        
+        return most_important
+    except:
+        return colors[:max_colors]
+
+def calculate_color_importance_ultra(color, img_array, params):
+    """Oblicza ultra precyzyjną ważność koloru"""
+    try:
+        # 1. Częstotliwość w obrazie
+        distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+        frequency = np.sum(distances < 25)
+        frequency_score = frequency / (img_array.shape[0] * img_array.shape[1])
+        
+        # 2. Pozycja w obrazie (środek ważniejszy)
+        color_positions = np.where(distances < 25)
+        if len(color_positions[0]) > 0:
+            center_y, center_x = img_array.shape[0] // 2, img_array.shape[1] // 2
+            avg_y = np.mean(color_positions[0])
+            avg_x = np.mean(color_positions[1])
+            
+            center_distance = np.sqrt((avg_y - center_y)**2 + (avg_x - center_x)**2)
+            max_distance = np.sqrt(center_y**2 + center_x**2)
+            centrality_score = 1.0 - (center_distance / max_distance)
+        else:
+            centrality_score = 0.0
+        
+        # 3. Nasycenie koloru (bardziej nasycone = ważniejsze)
+        hsv = rgb_to_hsv_precise(color)
+        saturation_score = hsv[1]
+        
+        # 4. Kontrast z sąsiadami
+        contrast_score = calculate_local_contrast_ultra(color, img_array)
+        
+        # 5. Perceptual distinctiveness
+        distinctiveness_score = calculate_color_distinctiveness(color, img_array)
+        
+        # Kombinuj wszystkie czynniki
+        total_importance = (
+            frequency_score * 0.3 +
+            centrality_score * 0.2 +
+            saturation_score * 0.2 +
+            contrast_score * 0.15 +
+            distinctiveness_score * 0.15
+        )
+        
+        return total_importance
+    except:
+        return 0.5
+
+def calculate_local_contrast_ultra(color, img_array):
+    """Oblicza lokalny kontrast koloru"""
+    try:
+        from scipy import ndimage
+        
+        # Znajdź piksele tego koloru
+        distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+        color_mask = distances < 25
+        
+        if np.sum(color_mask) == 0:
+            return 0.0
+        
+        # Oblicz kontrast w 5x5 sąsiedztwie
+        contrasts = []
+        color_positions = np.where(color_mask)
+        
+        sample_size = min(100, len(color_positions[0]))
+        sample_indices = np.random.choice(len(color_positions[0]), sample_size, replace=False)
+        
+        for idx in sample_indices:
+            y, x = color_positions[0][idx], color_positions[1][idx]
+            
+            # 5x5 sąsiedztwo
+            y_start, y_end = max(0, y-2), min(img_array.shape[0], y+3)
+            x_start, x_end = max(0, x-2), min(img_array.shape[1], x+3)
+            
+            neighborhood = img_array[y_start:y_end, x_start:x_end]
+            if neighborhood.size > 0:
+                avg_neighbor = np.mean(neighborhood.reshape(-1, 3), axis=0)
+                contrast = np.sqrt(np.sum((np.array(color) - avg_neighbor)**2))
+                contrasts.append(contrast)
+        
+        return np.mean(contrasts) / 255.0 if contrasts else 0.0
+    except:
+        return 0.0
+
+def calculate_color_distinctiveness(color, img_array):
+    """Oblicza jak bardzo kolor wyróżnia się w obrazie"""
+    try:
+        # Oblicz odległości do wszystkich pikseli
+        distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+        
+        # Sprawdź jak wiele pikseli jest podobnych
+        for threshold in [10, 20, 30, 40, 50]:
+            similar_pixels = np.sum(distances < threshold)
+            total_pixels = img_array.shape[0] * img_array.shape[1]
+            similarity_ratio = similar_pixels / total_pixels
+            
+            # Jeśli mniej niż 5% pikseli jest podobnych, kolor jest wyróżniający
+            if similarity_ratio < 0.05:
+                return 1.0 - (similarity_ratio * 20)
+        
+        # Jeśli dużo podobnych pikseli, sprawdź czy tworzą spójne regiony
+        close_mask = distances < 30
+        if np.sum(close_mask) > 0:
+            from scipy import ndimage
+            labeled, num_features = ndimage.label(close_mask)
+            
+            if num_features > 0:
+                # Mniej regionów = większa spójność = mniejsza wyróżnialność
+                region_score = min(1.0, num_features / 10)
+                return region_score
+        
+        return 0.5
+    except:
+        return 0.5
+
+def sort_colors_by_perceptual_importance(img_array, colors, params):
+    """Sortuje kolory według ważności perceptualnej"""
+    try:
+        if not colors:
+            return colors
+        
+        color_scores = []
+        
+        for color in colors:
+            # Oblicz comprehensive importance score
+            importance = calculate_color_importance_ultra(color, img_array, params)
+            
+            # Bonus za cartoon/line art optimization
+            if params.get('cartoon_optimization', False):
+                hsv = rgb_to_hsv_precise(color)
+                # Bonus za wysoko nasycone kolory w cartoon
+                if hsv[1] > 0.6:
+                    importance *= 1.2
+            
+            if params.get('line_art_optimization', False):
+                # Bonus za ekstremalne jasności w line art
+                brightness = sum(color) / 3
+                if brightness < 50 or brightness > 200:
+                    importance *= 1.1
+            
+            color_scores.append((importance, color))
+        
+        # Sortuj według ważności (malejąco)
+        color_scores.sort(reverse=True)
+        
+        sorted_colors = [color for score, color in color_scores]
+        return sorted_colors
+    except:
+        return colors
+
             
             # Znajdź wszystkie podobne kolory
             similar_colors = [color]
