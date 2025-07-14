@@ -1928,36 +1928,6 @@ def analyze_texture_directionality(img_array):
         return min(1.0, (directionality - 1) / 3)
     except:
         return 0.3
-        gray = np.mean(img_array, axis=2)
-
-        # Gradienty w różnych kierunkach
-        directions = []
-        for angle in [0, 45, 90, 135]:
-            # Sobel w różnych kierunkach
-            if angle == 0:
-                grad = ndimage.sobel(gray, axis=1)
-            elif angle == 45:
-                kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]) / 8
-                grad = ndimage.convolve(gray, kernel)
-            elif angle == 90:
-                grad = ndimage.sobel(gray, axis=0)
-            else:  # 135
-                kernel = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]]) / 8
-                grad = ndimage.convolve(gray, kernel)
-
-            directions.append(np.mean(np.abs(grad)))
-
-        # Sprawdź czy jest dominujący kierunek
-        max_direction = np.max(directions)
-        avg_direction = np.mean(directions)
-
-        if avg_direction == 0:
-            return 0.5
-
-        directionality = max_direction / avg_direction
-        return min(1.0, (directionality - 1) / 3)
-    except:
-        return 0.3
 
 def analyze_shape_regularity(img_array):
     """Analizuje regularność kształtów"""
