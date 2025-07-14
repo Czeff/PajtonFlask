@@ -176,6 +176,47 @@ def extract_dominant_colors_advanced(image, max_colors=50, params=None):
         print(f"Błąd podczas perfekcyjnej analizy kolorów: {e}")
         return extract_dominant_colors_simple(image, max_colors)
 
+def extract_dominant_colors_simple(image, max_colors=8):
+    """Prosta metoda wyciągania kolorów dominujących jako fallback"""
+    try:
+        from sklearn.cluster import KMeans
+        
+        img_array = np.array(image)
+        pixels = img_array.reshape(-1, 3)
+        
+        # Próbkowanie dla wydajności
+        if len(pixels) > 10000:
+            step = len(pixels) // 10000
+            pixels = pixels[::step]
+        
+        # K-means clustering
+        kmeans = KMeans(n_clusters=min(max_colors, len(pixels)), random_state=42, n_init=10)
+        kmeans.fit(pixels)
+        
+        colors = [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        return colors
+        
+    except Exception as e:
+        print(f"Błąd w extract_dominant_colors_simple: {e}")
+        # Ostateczny fallback - próbkowanie kolorów
+        try:
+            img_array = np.array(image)
+            h, w = img_array.shape[:2]
+            
+            colors = []
+            step_h = max(1, h // 10)
+            step_w = max(1, w // 10)
+            
+            for y in range(0, h, step_h):
+                for x in range(0, w, step_w):
+                    color = tuple(img_array[y, x])
+                    if color not in colors and len(colors) < max_colors:
+                        colors.append(color)
+            
+            return colors[:max_colors]
+        except:
+            return [(255, 0, 0), (0, 255, 0), (0, 0, 255)]  # Domyślne kolory
+
 def extract_precise_dominant_colors(img_array, max_colors):
     """Precyzyjne wyciąganie kolorów dominujących"""
     try:
@@ -742,6 +783,26 @@ def create_color_regions_advanced(image, colors):
     except Exception as e:
         print(f"❌ Błąd podczas ultra precyzyjnego tworzenia regionów: {e}")
         return create_color_regions_simple(image, colors)
+
+def create_color_regions_simple(image, colors):
+    """Prosta metoda tworzenia regionów kolorów jako fallback"""
+    try:
+        img_array = np.array(image)
+        regions = []
+        
+        for color in colors:
+            # Prosta maska podobieństwa kolorów
+            distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+            mask = distances < 50  # Próg podobieństwa
+            
+            if np.sum(mask) > 10:  # Minimum pikseli
+                regions.append((color, mask))
+        
+        return regions
+        
+    except Exception as e:
+        print(f"Błąd w create_color_regions_simple: {e}")
+        return []
 
 def create_ultra_precise_mask(img_array, color):
     """Tworzy perfekcyjną maskę koloru z usuwaniem szumów i artefaktów"""
@@ -1447,6 +1508,61 @@ def should_use_curve_precise(contour, index):
     except:
         return False
 
+def vectorize_image_improved(input_path, svg_path):
+    """Główna funkcja wektoryzacji z użyciem zaawansowanych algorytmów"""
+    try:
+        print(f"🎯 Rozpoczynam zaawansowaną wektoryzację: {input_path}")
+        
+        # Załaduj i zoptymalizuj obraz
+        optimized_image = optimize_image_for_vectorization(input_path)
+        if optimized_image is None:
+            print("❌ Nie udało się zoptymalizować obrazu")
+            return False
+
+        # Analizuj złożoność obrazu i dobierz parametry
+        complexity_params = analyze_image_complexity(optimized_image)
+        print(f"📊 Parametry jakości: {complexity_params}")
+
+        # Wyciągnij dominujące kolory z wysoką precyzją
+        colors = extract_dominant_colors_advanced(optimized_image, 
+                                                complexity_params['max_colors'], 
+                                                complexity_params)
+        
+        if not colors:
+            print("❌ Nie udało się wyciągnąć kolorów z obrazu")
+            return False
+
+        print(f"🎨 Znaleziono {len(colors)} kolorów wysokiej jakości")
+
+        # Stwórz regiony kolorów z maksymalną precyzją
+        regions = create_color_regions_advanced(optimized_image, colors)
+        
+        if not regions:
+            print("❌ Nie udało się utworzyć regionów kolorów")
+            return False
+
+        print(f"🗺️ Utworzono {len(regions)} regionów kolorów")
+
+        # Generuj SVG z parametrami haftu
+        svg_content = generate_professional_embroidery_svg(optimized_image, regions, complexity_params)
+        
+        if not svg_content:
+            print("❌ Nie udało się wygenerować pliku SVG")
+            return False
+
+        # Zapisz plik SVG
+        with open(svg_path, 'w', encoding='utf-8') as f:
+            f.write(svg_content)
+
+        print(f"✅ Pomyślnie zapisano: {svg_path}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Błąd podczas wektoryzacji: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 def create_realistic_preview(svg_path, preview_path, original_image, size=(400, 400)):
     """Tworzy czysty podgląd bez obramówek i tekstu"""
     try:
@@ -1468,6 +1584,107 @@ def create_realistic_preview(svg_path, preview_path, original_image, size=(400, 
             return True
         except:
             return False
+
+def generate_professional_embroidery_svg(image, regions, params):
+    """Generuje profesjonalny plik SVG z parametrami haftu"""
+    try:
+        width, height = image.size
+        
+        svg_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<svg width="{width}" height="{height}" 
+     viewBox="0 0 {width} {height}"
+     xmlns="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:inkstitch="http://inkstitch.org/namespace">
+  
+  <defs>
+    <!-- Definicje wzorów haftu -->
+    <pattern id="satin-pattern" patternUnits="userSpaceOnUse" width="2" height="2">
+      <rect width="2" height="2" fill="none"/>
+      <line x1="0" y1="0" x2="2" y2="2" stroke="#000" stroke-width="0.1"/>
+    </pattern>
+  </defs>
+  
+  <g inkscape:label="Embroidery Design" inkscape:groupmode="layer">
+'''
+
+        # Dodaj każdy region jako ścieżkę z parametrami haftu
+        for i, (color, mask) in enumerate(regions):
+            try:
+                # Śledź kontury regionu
+                contours = trace_contours_advanced(mask)
+                
+                for j, contour in enumerate(contours):
+                    if len(contour) >= 3:
+                        # Utwórz ścieżkę SVG
+                        path_data = create_smooth_svg_path(contour)
+                        
+                        if path_data:
+                            # Parametry haftu zależne od koloru
+                            stitch_params = get_embroidery_parameters(color, params)
+                            
+                            svg_content += f'''
+    <path id="region_{i}_{j}"
+          d="{path_data}"
+          fill="rgb({color[0]},{color[1]},{color[2]})"
+          stroke="rgb({color[0]},{color[1]},{color[2]})"
+          stroke-width="0.5"
+          inkstitch:object_type="{stitch_params['type']}"
+          inkstitch:density_mm="{stitch_params['density']}"
+          inkstitch:angle="{stitch_params['angle']}"
+          inkstitch:stitch_length_mm="{stitch_params['stitch_length']}"
+          inkstitch:color_sort_index="{i}"
+          inkstitch:thread_color="#{color[0]:02x}{color[1]:02x}{color[2]:02x}"/>
+'''
+            except Exception as e:
+                print(f"Błąd podczas przetwarzania regionu {i}: {e}")
+                continue
+
+        svg_content += '''
+  </g>
+</svg>'''
+
+        return svg_content
+
+    except Exception as e:
+        print(f"Błąd podczas generowania SVG: {e}")
+        return None
+
+def get_embroidery_parameters(color, params):
+    """Zwraca parametry haftu dostosowane do koloru"""
+    try:
+        brightness = sum(color) / 3
+        saturation = max(color) - min(color)
+        
+        # Dostosuj parametry do koloru
+        if brightness < 80:  # Ciemne kolory
+            return {
+                'type': 'fill',
+                'density': '0.4',
+                'angle': '45',
+                'stitch_length': '2.5'
+            }
+        elif saturation > 100:  # Nasycone kolory
+            return {
+                'type': 'satin',
+                'density': '0.3',
+                'angle': '0',
+                'stitch_length': '3.0'
+            }
+        else:  # Standardowe kolory
+            return {
+                'type': 'fill',
+                'density': '0.35',
+                'angle': '30',
+                'stitch_length': '2.8'
+            }
+    except:
+        return {
+            'type': 'fill',
+            'density': '0.4',
+            'angle': '45',
+            'stitch_length': '2.5'
+        }
 
 @app.route('/')
 def index():
