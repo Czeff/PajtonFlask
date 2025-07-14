@@ -550,67 +550,48 @@ def calculate_overall_complexity_score(edge_density, edge_sharpness, edge_connec
         return 0.5
 
 def extract_dominant_colors_advanced(image, max_colors=50, params=None):
-    """AI-enhanced ultra precyzyjna analiza kolorów z maksymalną jakością"""
+    """Zoptymalizowana analiza kolorów skupiająca się na głównych obszarach"""
     try:
         img_array = np.array(image)
 
-        # Pobierz zaawansowane parametry AI
-        quality_level = params.get('quality_enhancement', 'ai_high') if params else 'ai_high'
-        tolerance_factor = params.get('tolerance_factor', 0.3) if params else 0.3
-        edge_enhancement = params.get('edge_enhancement', True) if params else True
-        gradient_preservation = params.get('gradient_preservation', True) if params else True
-        micro_detail_preservation = params.get('micro_detail_preservation', False) if params else False
+        # Pobierz parametry
+        tolerance_factor = params.get('tolerance_factor', 0.5) if params else 0.5
+        focus_main_areas = params.get('focus_main_areas', True) if params else True
+        color_flattening = params.get('color_flattening', True) if params else True
 
-        print(f"🎨 AI Color Analysis: jakość={quality_level}, tolerancja={tolerance_factor}, edge_enh={edge_enhancement}")
+        print(f"🎨 Optimized Color Analysis: tolerancja={tolerance_factor}, main_areas={focus_main_areas}")
 
         colors = []
 
-        # 1. AI-ENHANCED DOMINANT COLORS - Największa precyzja
-        if 'ai_' in quality_level:
-            dominant_colors = extract_ai_enhanced_dominant_colors(img_array, max_colors // 2, params)
-            colors.extend(dominant_colors)
-            print(f"   🤖 AI dominant: {len(dominant_colors)} kolorów")
+        # 1. GŁÓWNE KOLORY DOMINUJĄCE - skupienie na dużych obszarach
+        if focus_main_areas:
+            # Używaj większe próbkowanie dla głównych kolorów
+            main_colors = extract_main_area_colors(img_array, max_colors // 2, params)
+            colors.extend(main_colors)
+            print(f"   🏢 Main areas: {len(main_colors)} kolorów")
 
-        # 2. MULTI-SCALE EDGE ANALYSIS - Kluczowe dla ostrych krawędzi
-        if edge_enhancement:
-            edge_colors = extract_multi_scale_edge_colors(img_array, max_colors // 4, params)
-            colors.extend(edge_colors)
-            print(f"   📐 Multi-scale edges: {len(edge_colors)} kolorów")
+        # 2. KOLORY KRAWĘDZI - ale tylko główne
+        edge_colors = extract_simplified_edge_colors(img_array, max_colors // 4, params)
+        colors.extend(edge_colors)
+        print(f"   📐 Main edges: {len(edge_colors)} kolorów")
 
-        # 3. GRADIENT PRESERVATION - Zachowanie płynnych przejść
-        if gradient_preservation:
-            gradient_colors = extract_advanced_gradient_colors(img_array, max_colors // 6, params)
-            colors.extend(gradient_colors)
-            print(f"   🌈 Advanced gradients: {len(gradient_colors)} kolorów")
-
-        # 4. MICRO-DETAIL EXTRACTION - Najmniejsze szczegóły
-        if micro_detail_preservation:
-            micro_colors = extract_micro_detail_colors(img_array, max_colors // 8, params)
-            colors.extend(micro_colors)
-            print(f"   🔬 Micro details: {len(micro_colors)} kolorów")
-
-        # 5. PERCEPTUAL COLOR MINING - Kolory ważne perceptualnie
-        perceptual_colors = extract_perceptual_important_colors(img_array, max_colors // 5, params)
-        colors.extend(perceptual_colors)
-        print(f"   👁️ Perceptual: {len(perceptual_colors)} kolorów")
-
-        # 6. ADAPTIVE CLUSTERING - Zaawansowany klaster analysis
+        # 3. KOLORY UZUPEŁNIAJĄCE
         if len(colors) < max_colors:
             additional_colors = extract_adaptive_clustering_colors(img_array, max_colors - len(colors), params)
             colors.extend(additional_colors)
-            print(f"   🎯 Adaptive clustering: {len(additional_colors)} kolorów")
+            print(f"   ➕ Additional: {len(additional_colors)} kolorów")
 
-        # AI-POWERED COLOR REFINEMENT
-        final_colors = ai_powered_color_refinement(colors, max_colors, img_array, params)
+        # AGRESYWNE ŁĄCZENIE PODOBNYCH KOLORÓW
+        final_colors = aggressive_color_merging(colors, max_colors, img_array, tolerance_factor)
 
-        # INTELLIGENT COLOR SORTING
-        final_colors = intelligent_color_importance_sorting(img_array, final_colors, params)
+        # SORTOWANIE WEDŁUG WIELKOŚCI OBSZARÓW
+        final_colors = sort_colors_by_area_size(img_array, final_colors)
 
-        print(f"🎨 AI Color Analysis Complete: {len(final_colors)} wysokiej jakości kolorów")
+        print(f"🎨 Optimized Color Analysis Complete: {len(final_colors)} głównych kolorów")
         return final_colors
 
     except Exception as e:
-        print(f"❌ Błąd AI color analysis: {e}")
+        print(f"❌ Błąd color analysis: {e}")
         return extract_dominant_colors_simple(image, max_colors)
 
 def extract_dominant_colors_simple(image, max_colors=8):
@@ -1723,81 +1704,86 @@ def analyze_image_complexity(image):
 
         print(f"🎯 Wynik złożoności: {complexity_score:.3f} (0.0-1.0)")
 
-        # PREMIUM DYNAMICZNE PARAMETRY - MAKSYMALNA JAKOŚĆ
+        # OPTIMIZED PARAMETERS - Focus on larger regions
         if complexity_score > 0.8:  # ULTRA-COMPLEX
             return {
-                'max_colors': 80,  # Znacznie zwiększona liczba kolorów
-                'tolerance_factor': 0.15,  # Ultra wysoka precyzja
-                'detail_preservation': 'ai_supreme',
-                'min_region_size': 1,
-                'color_flattening': False,
-                'quality_enhancement': 'ai_supreme',
-                'curve_smoothing': 'adaptive_supreme',
+                'max_colors': 25,  # Zmniejszono dla większych regionów
+                'tolerance_factor': 0.4,  # Zwiększono tolerancję dla łączenia podobnych kolorów
+                'detail_preservation': 'balanced',
+                'min_region_size': 500,  # Znacznie zwiększono minimalny rozmiar regionu
+                'color_flattening': True,
+                'quality_enhancement': 'ai_high',
+                'curve_smoothing': 'adaptive',
                 'edge_enhancement': True,
-                'micro_detail_preservation': True,
-                'gradient_preservation': True,
-                'ultra_precision_mode': True,
-                'advanced_color_analysis': True
+                'micro_detail_preservation': False,  # Wyłączono mikro-detale
+                'gradient_preservation': False,  # Wyłączono zachowanie gradientów
+                'ultra_precision_mode': False,
+                'advanced_color_analysis': False,
+                'focus_main_areas': True
             }
         elif complexity_score > 0.65:  # VERY COMPLEX
             return {
-                'max_colors': 70,  # Zwiększono
-                'tolerance_factor': 0.18,  # Zwiększona precyzja
-                'detail_preservation': 'ai_supreme',
-                'min_region_size': 1,
-                'color_flattening': False,
-                'quality_enhancement': 'ai_supreme',
-                'curve_smoothing': 'adaptive_supreme',
+                'max_colors': 22,
+                'tolerance_factor': 0.45,
+                'detail_preservation': 'balanced',
+                'min_region_size': 400,
+                'color_flattening': True,
+                'quality_enhancement': 'ai_high',
+                'curve_smoothing': 'adaptive',
                 'edge_enhancement': True,
-                'micro_detail_preservation': True,
-                'gradient_preservation': True,
-                'ultra_precision_mode': True,
-                'advanced_color_analysis': True
+                'micro_detail_preservation': False,
+                'gradient_preservation': False,
+                'ultra_precision_mode': False,
+                'advanced_color_analysis': False,
+                'focus_main_areas': True
             }
         elif complexity_score > 0.5:  # COMPLEX
             return {
-                'max_colors': 65,  # Zwiększono
-                'tolerance_factor': 0.22,  # Zwiększona precyzja
-                'detail_preservation': 'ai_ultra_high',
-                'min_region_size': 1,
-                'color_flattening': False,
-                'quality_enhancement': 'ai_ultra_high',
-                'curve_smoothing': 'adaptive_ultra',
-                'edge_enhancement': True,
-                'micro_detail_preservation': True,
-                'gradient_preservation': True,
-                'ultra_precision_mode': True,
-                'advanced_color_analysis': True
-            }
-        elif complexity_score > 0.35:  # MEDIUM
-            return {
-                'max_colors': 60,  # Zwiększono
-                'tolerance_factor': 0.25,  # Zwiększona precyzja
-                'detail_preservation': 'ai_high',
-                'min_region_size': 1,
-                'color_flattening': False,
-                'quality_enhancement': 'ai_high',
-                'curve_smoothing': 'adaptive_high',
-                'edge_enhancement': True,
-                'micro_detail_preservation': True,
-                'gradient_preservation': True,
-                'ultra_precision_mode': False,
-                'advanced_color_analysis': True
-            }
-        else:  # SIMPLE
-            return {
-                'max_colors': 55,  # Zwiększono
-                'tolerance_factor': 0.28,  # Zwiększona precyzja
-                'detail_preservation': 'ai_medium',
-                'min_region_size': 1,
-                'color_flattening': False,
+                'max_colors': 20,
+                'tolerance_factor': 0.5,
+                'detail_preservation': 'balanced',
+                'min_region_size': 300,
+                'color_flattening': True,
                 'quality_enhancement': 'ai_medium',
                 'curve_smoothing': 'adaptive',
                 'edge_enhancement': True,
                 'micro_detail_preservation': False,
-                'gradient_preservation': True,
+                'gradient_preservation': False,
                 'ultra_precision_mode': False,
-                'advanced_color_analysis': True
+                'advanced_color_analysis': False,
+                'focus_main_areas': True
+            }
+        elif complexity_score > 0.35:  # MEDIUM
+            return {
+                'max_colors': 18,
+                'tolerance_factor': 0.55,
+                'detail_preservation': 'balanced',
+                'min_region_size': 200,
+                'color_flattening': True,
+                'quality_enhancement': 'ai_medium',
+                'curve_smoothing': 'adaptive',
+                'edge_enhancement': True,
+                'micro_detail_preservation': False,
+                'gradient_preservation': False,
+                'ultra_precision_mode': False,
+                'advanced_color_analysis': False,
+                'focus_main_areas': True
+            }
+        else:  # SIMPLE
+            return {
+                'max_colors': 15,
+                'tolerance_factor': 0.6,
+                'detail_preservation': 'balanced',
+                'min_region_size': 150,
+                'color_flattening': True,
+                'quality_enhancement': 'ai_medium',
+                'curve_smoothing': 'adaptive',
+                'edge_enhancement': True,
+                'micro_detail_preservation': False,
+                'gradient_preservation': False,
+                'ultra_precision_mode': False,
+                'advanced_color_analysis': False,
+                'focus_main_areas': True
             }
 
     except Exception as e:
@@ -1829,20 +1815,24 @@ def create_simple_svg_path(contour):
 
     return path_data
 
-def create_color_regions_advanced(image, colors):
-    """Ultra precyzyjne tworzenie regionów z zachowaniem szczegółów oryginalnego obrazu"""
+def create_color_regions_advanced(image, colors, params=None):
+    """Zoptymalizowane tworzenie regionów skupiające się na głównych obszarach"""
     try:
         width, height = image.size
         img_array = np.array(image)
 
+        # Pobierz parametry
+        min_region_size = params.get('min_region_size', 100) if params else 100
+        tolerance_factor = params.get('tolerance_factor', 0.5) if params else 0.5
+
         regions = []
 
-        # Analiza każdego koloru z maksymalną precyzją
+        # Analiza każdego koloru z fokusem na większe obszary
         for i, color in enumerate(colors):
-            print(f"🎯 Ultra precyzyjne przetwarzanie koloru {i+1}/{len(colors)}: {color}")
+            print(f"🎯 Przetwarzanie głównego koloru {i+1}/{len(colors)}: {color}")
 
-            # Wielopoziomowa detekcja regionów
-            mask = create_ultra_precise_mask(img_array, color)
+            # Tworzenie maski z większą tolerancją
+            mask = create_main_area_mask(img_array, color, tolerance_factor)
 
             if mask is None:
                 continue
@@ -1850,30 +1840,139 @@ def create_color_regions_advanced(image, colors):
             initial_pixels = np.sum(mask)
             print(f"  📊 Początkowe piksele: {initial_pixels}")
 
-            if initial_pixels > 1:  # DRASTYCZNIE zmniejszony próg - zachowaj wszystkie detale
-                # Zachowanie szczegółów z minimalnymi przekształceniami
-                mask = preserve_detail_processing_ultra(mask, initial_pixels)
-
-                # Inteligentne łączenie z zachowaniem kształtów
-                mask = smart_shape_preserving_merge(mask, img_array, color)
+            if initial_pixels >= min_region_size:
+                # Minimalne przetwarzanie dla zachowania dużych obszarów
+                mask = clean_main_regions(mask, min_region_size)
 
                 final_pixels = np.sum(mask)
                 print(f"  ✅ Finalne piksele: {final_pixels}")
 
-                if final_pixels > 1:  # DRASTYCZNIE zmniejszony próg dla zachowania detali
+                if final_pixels >= min_region_size:
                     regions.append((color, mask))
-                    print(f"  ✓ Dodano region z zachowaniem szczegółów dla koloru {color}")
+                    print(f"  ✓ Dodano główny region ({final_pixels} px) dla koloru {color}")
                 else:
-                    print(f"  ✗ Region za mały po przetwarzaniu")
+                    print(f"  ✗ Region za mały po czyszczeniu ({final_pixels} px < {min_region_size} px)")
             else:
-                print(f"  ✗ Brak wystarczających pikseli")
+                print(f"  ✗ Region za mały ({initial_pixels} px < {min_region_size} px)")
 
-        print(f"🏁 Utworzono {len(regions)} regionów ultra wysokiej precyzji")
+        print(f"🏁 Utworzono {len(regions)} głównych regionów")
         return regions
 
     except Exception as e:
-        print(f"❌ Błąd podczas ultra precyzyjnego tworzenia regionów: {e}")
+        print(f"❌ Błąd podczas tworzenia regionów: {e}")
         return create_color_regions_simple(image, colors)
+
+def extract_main_area_colors(img_array, max_colors, params):
+    """Wyciąga kolory z głównych obszarów obrazu"""
+    try:
+        from sklearn.cluster import KMeans
+        
+        # Większe próbkowanie dla głównych kolorów
+        height, width = img_array.shape[:2]
+        sample_rate = min(0.5, 200000 / (height * width))
+        
+        pixels = img_array.reshape(-1, 3)
+        if len(pixels) > 100000:
+            step = max(1, int(1 / sample_rate))
+            pixels = pixels[::step]
+        
+        # K-means z dużą liczbą iteracji
+        kmeans = KMeans(n_clusters=min(max_colors, len(pixels)), random_state=42, n_init=50, max_iter=1000)
+        kmeans.fit(pixels)
+        
+        return [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+    except:
+        return []
+
+def extract_simplified_edge_colors(img_array, max_colors, params):
+    """Uproszczone wykrywanie kolorów krawędzi"""
+    try:
+        from scipy import ndimage
+        from sklearn.cluster import KMeans
+        
+        gray = np.mean(img_array, axis=2)
+        edges = ndimage.sobel(gray)
+        
+        # Wyższy próg dla głównych krawędzi
+        threshold = np.percentile(edges, 90)
+        edge_mask = edges > threshold
+        
+        edge_pixels = img_array[edge_mask]
+        
+        if len(edge_pixels) > 100:
+            n_clusters = min(max_colors, len(edge_pixels) // 500)  # Mniej klastrów
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+                kmeans.fit(edge_pixels)
+                return [(int(c[0]), int(c[1]), int(c[2])) for c in kmeans.cluster_centers_]
+        
+        return []
+    except:
+        return []
+
+def aggressive_color_merging(colors, max_colors, img_array, tolerance_factor):
+    """Agresywne łączenie podobnych kolorów"""
+    try:
+        if not colors:
+            return []
+        
+        merged_colors = []
+        used_indices = set()
+        
+        for i, color in enumerate(colors):
+            if i in used_indices:
+                continue
+            
+            # Znajdź wszystkie podobne kolory
+            similar_colors = [color]
+            similar_indices = [i]
+            
+            for j, other_color in enumerate(colors[i+1:], i+1):
+                if j in used_indices:
+                    continue
+                
+                # Bardziej agresywne łączenie
+                distance = calculate_color_distance_simple(color, other_color)
+                merge_threshold = 50 * tolerance_factor  # Zwiększony próg
+                
+                if distance < merge_threshold:
+                    similar_colors.append(other_color)
+                    similar_indices.append(j)
+            
+            # Uśrednij kolory
+            if similar_colors:
+                avg_color = [
+                    int(sum(c[0] for c in similar_colors) / len(similar_colors)),
+                    int(sum(c[1] for c in similar_colors) / len(similar_colors)),
+                    int(sum(c[2] for c in similar_colors) / len(similar_colors))
+                ]
+                merged_colors.append(tuple(avg_color))
+                used_indices.update(similar_indices)
+        
+        return merged_colors[:max_colors]
+    except:
+        return colors[:max_colors]
+
+def calculate_color_distance_simple(color1, color2):
+    """Prosta odległość euklidesowa między kolorami"""
+    return np.sqrt(sum((a - b)**2 for a, b in zip(color1, color2)))
+
+def sort_colors_by_area_size(img_array, colors):
+    """Sortuje kolory według wielkości obszarów w obrazie"""
+    try:
+        color_areas = []
+        
+        for color in colors:
+            distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
+            area = np.sum(distances < 40)  # Próg podobieństwa
+            color_areas.append((area, color))
+        
+        # Sortuj według obszaru (malejąco)
+        color_areas.sort(reverse=True)
+        
+        return [color for area, color in color_areas]
+    except:
+        return colors
 
 def create_color_regions_simple(image, colors):
     """Prosta metoda tworzenia regionów kolorów jako fallback"""
@@ -1882,11 +1981,11 @@ def create_color_regions_simple(image, colors):
         regions = []
         
         for color in colors:
-            # Prosta maska podobieństwa kolorów
+            # Prosta maska podobieństwa kolorów z większą tolerancją
             distances = np.sqrt(np.sum((img_array - np.array(color))**2, axis=2))
-            mask = distances < 50  # Próg podobieństwa
+            mask = distances < 60  # Zwiększony próg podobieństwa
             
-            if np.sum(mask) > 10:  # Minimum pikseli
+            if np.sum(mask) > 100:  # Wyższy minimum pikseli
                 regions.append((color, mask))
         
         return regions
@@ -2125,6 +2224,58 @@ def remove_noise_and_artifacts(mask, img_array, color_array):
 
     except Exception as e:
         print(f"Błąd w remove_noise_and_artifacts: {e}")
+        return mask
+
+def create_main_area_mask(img_array, color, tolerance_factor):
+    """Tworzy maskę dla głównych obszarów koloru"""
+    try:
+        color_array = np.array(color)
+        
+        # Większa tolerancja dla głównych obszarów
+        distances = np.sqrt(np.sum((img_array - color_array)**2, axis=2))
+        
+        # Adaptacyjny próg bazujący na tolerancji
+        base_threshold = 30
+        threshold = base_threshold * (1 + tolerance_factor)
+        
+        mask = distances <= threshold
+        
+        # Wypełnij małe dziury
+        from scipy import ndimage
+        mask = ndimage.binary_fill_holes(mask)
+        
+        # Usuń bardzo małe komponenty
+        labeled, num_features = ndimage.label(mask)
+        for i in range(1, num_features + 1):
+            component = labeled == i
+            if np.sum(component) < 50:  # Usuń komponenty mniejsze niż 50 pikseli
+                mask[component] = False
+        
+        return mask
+    except:
+        return None
+
+def clean_main_regions(mask, min_size):
+    """Czyści regiony zachowując tylko główne obszary"""
+    try:
+        from scipy import ndimage
+        
+        # Erozja i dylatacja dla wygładzenia
+        structure = np.ones((3, 3))
+        mask = ndimage.binary_erosion(mask, structure=structure, iterations=1)
+        mask = ndimage.binary_dilation(mask, structure=structure, iterations=2)
+        
+        # Usuń małe komponenty
+        labeled, num_features = ndimage.label(mask)
+        cleaned_mask = np.zeros_like(mask)
+        
+        for i in range(1, num_features + 1):
+            component = labeled == i
+            if np.sum(component) >= min_size // 4:  # Zachowaj komponenty większe niż 1/4 min_size
+                cleaned_mask[component] = True
+        
+        return cleaned_mask
+    except:
         return mask
 
 def preserve_detail_processing_ultra(mask, initial_pixels):
@@ -3455,8 +3606,8 @@ def vectorize_image_improved(input_path, svg_path):
 
         print(f"🎨 Znaleziono {len(colors)} kolorów wysokiej jakości")
 
-        # Stwórz regiony kolorów z maksymalną precyzją
-        regions = create_color_regions_advanced(optimized_image, colors)
+        # Stwórz regiony kolorów z fokusem na główne obszary
+        regions = create_color_regions_advanced(optimized_image, colors, complexity_params)
         
         if not regions:
             print("❌ Nie udało się utworzyć regionów kolorów")
