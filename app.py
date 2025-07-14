@@ -1819,28 +1819,58 @@ def extract_main_area_colors(img_array, max_colors, params):
             pixels = pixels[::step]
 
 def analyze_edge_continuity(img_array):
-    """Analizuje ciągłość krawędzi - kluczowe dla jakości cartoon/anime"""
+    """Analizuje ciągłość krawędzi z ulepszoną implementacją"""
     try:
-        from scipy import ndimage
-        gray = np.mean(img_array, axis=2)
+        # Konwersja do skali szarości
+        if len(img_array.shape) == 3:
+            gray = np.mean(img_array, axis=2)
+        else:
+            gray = img_array
         
-        # Gradients w różnych kierunkach
-        grad_x = ndimage.sobel(gray, axis=1)
-        grad_y = ndimage.sobel(gray, axis=0)
+        # Oblicz gradienty używając prostych operatorów
+        height, width = gray.shape
+        grad_x = np.zeros_like(gray)
+        grad_y = np.zeros_like(gray)
+        
+        # Gradient w kierunku X (horizontal)
+        grad_x[:, 1:] = gray[:, 1:] - gray[:, :-1]
+        
+        # Gradient w kierunku Y (vertical)  
+        grad_y[1:, :] = gray[1:, :] - gray[:-1, :]
+        
+        # Magnitude gradientu
         grad_magnitude = np.sqrt(grad_x**2 + grad_y**2)
         
-        # Analiza ciągłości przez łączenie sąsiadujących krawędzi
-        edge_mask = grad_magnitude > np.percentile(grad_magnitude, 85)
+        # Znajdź krawędzie
+        if np.max(grad_magnitude) > 0:
+            threshold = np.percentile(grad_magnitude, 85)
+            edge_mask = grad_magnitude > threshold
+        else:
+            return 0.5
         
-        # Morfologiczne operacje dla ciągłości
-        from scipy.ndimage import binary_closing, binary_opening
-        continuous_edges = binary_closing(edge_mask, structure=np.ones((3, 3)))
-        continuous_edges = binary_opening(continuous_edges, structure=np.ones((2, 2)))
+        # Analiza ciągłości przez sprawdzanie połączeń sąsiadujących pikseli
+        total_edge_pixels = np.sum(edge_mask)
+        if total_edge_pixels == 0:
+            return 0.5
         
-        # Stosunek ciągłych krawędzi do wszystkich
-        continuity_ratio = np.sum(continuous_edges) / max(1, np.sum(edge_mask))
+        # Sprawdź ciągłość przez liczenie pikseli krawędzi z sąsiadami
+        continuous_count = 0
+        for y in range(1, height-1):
+            for x in range(1, width-1):
+                if edge_mask[y, x]:
+                    # Sprawdź sąsiedztwo 3x3
+                    neighbors = edge_mask[y-1:y+2, x-1:x+2]
+                    neighbor_count = np.sum(neighbors) - 1  # Odejmij środkowy piksel
+                    
+                    # Jeśli ma przynajmniej 1 sąsiada krawędzi, jest ciągły
+                    if neighbor_count > 0:
+                        continuous_count += 1
         
-        return min(1.0, continuity_ratio * 1.2)
+        # Oblicz stosunek ciągłości
+        continuity_ratio = continuous_count / total_edge_pixels if total_edge_pixels > 0 else 0
+        
+        return min(1.0, max(0.0, continuity_ratio))
+        
     except Exception as e:
         print(f"Błąd w analyze_edge_continuity: {e}")
         return 0.5
