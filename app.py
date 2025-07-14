@@ -1841,7 +1841,8 @@ def analyze_edge_continuity(img_array):
         continuity_ratio = np.sum(continuous_edges) / max(1, np.sum(edge_mask))
         
         return min(1.0, continuity_ratio * 1.2)
-    except:
+    except Exception as e:
+        print(f"Błąd w analyze_edge_continuity: {e}")
         return 0.5
 
 def analyze_color_harmony(img_array):
